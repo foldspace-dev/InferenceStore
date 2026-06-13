@@ -37,12 +37,21 @@ public class RouteAssertions(private val trace: RouteTrace) {
         }
     }
 
-    /** Asserts routing fell back to [providerId] for [reason]. */
+    /**
+     * Asserts routing fell back TO [providerId] for [reason] — i.e. [providerId]
+     * is a non-first attempt and the transition into it carried [reason]
+     * (`fallbackReasons` is aligned with the attempt order). This prevents a
+     * pass when [reason] was recorded for an unrelated fallback.
+     */
     public fun fellBackTo(providerId: String, reason: FallbackReason) {
-        if (reason !in trace.fallbackReasons) {
-            fail("expected fallback reason $reason; reasons=${trace.fallbackReasons}")
+        val index = trace.attempts.indexOfFirst { it.providerId == providerId }
+        if (index <= 0) {
+            fail("expected '$providerId' to be a fallback target (a non-first attempt); attempts=${attemptIds()}")
         }
-        attempted(providerId)
+        val transitionReason = trace.fallbackReasons.getOrNull(index - 1)
+        if (transitionReason != reason) {
+            fail("expected fallback into '$providerId' for $reason but the aligned reason was $transitionReason; reasons=${trace.fallbackReasons}")
+        }
     }
 
     /** Asserts [providerId] was rejected (never invoked) for [reason]. */

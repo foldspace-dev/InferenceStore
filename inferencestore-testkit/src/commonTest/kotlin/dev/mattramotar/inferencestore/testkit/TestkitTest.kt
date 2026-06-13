@@ -72,6 +72,7 @@ class TestkitTest {
         job.cancel()
         job.join()
 
+        assertTrue(job.isCancelled) // generate() did not complete — cancellation was honored
         slow.assertCancelled()
         slow.assertInvocations(1)
     }

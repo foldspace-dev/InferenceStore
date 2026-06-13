@@ -19,6 +19,9 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlin.concurrent.atomics.AtomicBoolean
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 
@@ -86,6 +89,7 @@ public class ProviderScript {
  * many times it was invoked and whether it was cancelled, so tests can assert
  * route decisions and privacy guarantees without a real model.
  */
+@OptIn(ExperimentalAtomicApi::class)
 public class FakeInferenceProvider(
     override val id: ProviderId,
     override val kind: ProviderKind = ProviderKind.Test,
@@ -93,14 +97,16 @@ public class FakeInferenceProvider(
     private val script: ProviderScript,
 ) : InferenceProvider {
 
-    private var invocationCount: Int = 0
-    private var cancelledFlag: Boolean = false
+    // Atomic so concurrent collections (e.g. dedupe fan-out) keep counts/flags
+    // deterministic for assertInvocations / assertCancelled.
+    private val invocationCount: AtomicInt = AtomicInt(0)
+    private val cancelledFlag: AtomicBoolean = AtomicBoolean(false)
 
     /** Number of times [stream] was collected. */
-    public val invocations: Int get() = invocationCount
+    public val invocations: Int get() = invocationCount.load()
 
     /** Whether a collection was cancelled mid-stream. */
-    public val wasCancelled: Boolean get() = cancelledFlag
+    public val wasCancelled: Boolean get() = cancelledFlag.load()
 
     override suspend fun availability(context: InferenceContext): ProviderAvailability = script.availability
 
@@ -116,7 +122,7 @@ public class FakeInferenceProvider(
         request: ProviderRequest<Output>,
         context: InferenceContext,
     ): Flow<ProviderEvent<Output>> = flow {
-        invocationCount++
+        invocationCount.fetchAndAdd(1)
         val metadata = ProviderMetadata(
             providerId = id,
             providerKind = kind,
@@ -143,7 +149,7 @@ public class FakeInferenceProvider(
                 }
             }
         } catch (cancellation: CancellationException) {
-            cancelledFlag = true
+            cancelledFlag.store(true)
             throw cancellation
         }
     }
@@ -157,7 +163,7 @@ public class FakeInferenceProvider(
 
     /** Fails unless a collection was cancelled. */
     public fun assertCancelled() {
-        if (!cancelledFlag) {
+        if (!wasCancelled) {
             throw AssertionError("Provider '${id.value}' was expected to be cancelled but was not")
         }
     }

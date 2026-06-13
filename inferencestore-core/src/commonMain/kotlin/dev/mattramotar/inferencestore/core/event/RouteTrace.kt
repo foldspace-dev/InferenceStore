@@ -45,6 +45,10 @@ public data class RouteTrace(
     public val policyId: String? = null,
     public val attempts: List<ProviderAttemptTrace> = emptyList(),
     public val rejectedProviders: List<RejectedProviderTrace> = emptyList(),
+    /**
+     * Why routing fell back, aligned with [attempts]: index `i` is the reason
+     * routing fell back from `attempts[i]` to `attempts[i + 1]`.
+     */
     public val fallbackReasons: List<FallbackReason> = emptyList(),
     public val finalProvider: String? = null,
     public val startedAtMillis: Long? = null,

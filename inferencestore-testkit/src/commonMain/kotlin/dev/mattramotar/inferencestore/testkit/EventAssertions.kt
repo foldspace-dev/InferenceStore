@@ -48,10 +48,23 @@ public class EventAssertions(private val events: List<InferenceEvent<*>>) {
         if (e !is InferenceEvent.Failed) fail("expected Failed but was $e")
     }
 
+    /** Fails if any events remain unconsumed, locking the exact expected sequence. */
+    public fun noMoreEvents() {
+        if (index != events.size) {
+            fail("expected exactly $index event(s) but got ${events.size}; trailing=${events.drop(index)}")
+        }
+    }
+
     private fun fail(message: String): Nothing = throw AssertionError("Event assertion failed: $message")
 }
 
-/** Runs [block] of [EventAssertions] against [events]. */
+/**
+ * Runs [block] of [EventAssertions] against [events], then asserts the whole
+ * sequence was consumed — a longer-than-expected stream cannot silently pass.
+ */
 public fun assertEvents(events: List<InferenceEvent<*>>, block: EventAssertions.() -> Unit) {
-    EventAssertions(events).apply(block)
+    EventAssertions(events).apply {
+        block()
+        noMoreEvents()
+    }
 }
