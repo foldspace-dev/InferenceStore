@@ -8,6 +8,7 @@ import dev.mattramotar.inferencestore.core.model.PromptSpec
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.policy.TimeoutPolicy
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 
 /** Stable provider identifier. */
@@ -15,6 +16,7 @@ import kotlin.jvm.JvmInline
 public value class ProviderId(public val value: String)
 
 /** Where a provider runs / who operates it. Drives privacy and routing decisions. */
+@Serializable
 public enum class ProviderKind { Local, Cloud, Platform, Remote, Test }
 
 /**

@@ -1,5 +1,6 @@
 package dev.mattramotar.inferencestore.core.provider
 
+import kotlinx.serialization.Serializable
 import kotlin.time.Duration
 
 /**
@@ -70,6 +71,7 @@ public class ProviderError(
 }
 
 /** Stable provider error taxonomy (canonical in `error-fallback-mapping.md`). */
+@Serializable
 public enum class ErrorCategory {
     ProviderUnavailable,
     CapabilityUnsupported,
