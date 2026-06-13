@@ -1,6 +1,6 @@
 # Issue tracker: Linear
 
-Issues and PRDs for this repo live in **Linear**, in the **OSS** team under the **InferenceStore** project. Use the Linear MCP tools for all operations. The `gh`/`glab` CLIs do not apply — this repo has no GitHub/GitLab remote.
+Issues and PRDs for this repo live in **Linear**, in the **OSS** team under the **InferenceStore** project. Use the Linear MCP tools for all issue operations. Code and pull requests live in GitHub (`foldspace-dev/InferenceStore`, via the `gh` CLI), but issues are tracked in Linear — not GitHub Issues.
 
 ## Conventions
 

@@ -6,7 +6,7 @@ Configuration for AI coding agents working in this repository.
 
 ### Issue tracker
 
-Issues and PRDs are tracked in **Linear** — team **OSS**, project **InferenceStore** — via the Linear MCP (this repo has no GitHub remote). See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in **Linear** — team **OSS**, project **InferenceStore** — via the Linear MCP. Code and PRs live in GitHub (`foldspace-dev/InferenceStore`); issues are not in GitHub Issues. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
