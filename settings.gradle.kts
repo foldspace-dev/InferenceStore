@@ -1,3 +1,5 @@
+import java.io.File
+
 pluginManagement {
     repositories {
         google()
@@ -21,4 +23,23 @@ include(
     ":inferencestore-provider-openai-compatible",
     ":inferencestore-provider-litertlm-android",
     ":samples:notes-summary",
+)
+
+// The Android target is enabled only when a real SDK is configured: an
+// ANDROID_HOME / ANDROID_SDK_ROOT pointing at an existing directory, or a
+// local.properties that actually defines sdk.dir. Computed once here and shared
+// with every module via a system property to avoid false-positive enablement
+// (e.g. an empty local.properties or a stale env var pointing nowhere).
+System.setProperty(
+    "inferencestore.androidEnabled",
+    run {
+        val env = System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT")
+        val fromEnv = env != null && File(env).isDirectory
+        val localProps = File(rootDir, "local.properties")
+        val fromLocalProps = localProps.exists() && runCatching {
+            java.util.Properties().apply { localProps.inputStream().use { load(it) } }
+                .getProperty("sdk.dir") != null
+        }.getOrElse { false }
+        (fromEnv || fromLocalProps).toString()
+    },
 )

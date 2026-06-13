@@ -98,7 +98,7 @@ The Gradle/KMP build (OSS-5) is organized as:
 | `inferencestore-core` | common, JVM, Android, iOS | Request model, provider contract, streaming API, policy, privacy, events |
 | `inferencestore-testkit` | common, JVM, Android, iOS | Fake providers + route assertions for deterministic tests |
 | `inferencestore-provider-openai-compatible` | common, JVM, Android, iOS | OpenAI-compatible cloud adapter (Ktor) |
-| `inferencestore-provider-litertlm-android` | JVM, Android | First real local adapter (LiteRT-LM) |
+| `inferencestore-provider-litertlm-android` | JVM, Android | Placeholder for the first real local adapter (LiteRT-LM, OSS-29) |
 | `samples/notes-summary` | JVM | Private note summarization sample |
 
 Build with `./gradlew build`. The Android target is enabled automatically when an Android SDK is present (`ANDROID_HOME` / `local.properties`); CI builds the full matrix on macOS. Contributors without the Android SDK still build and test the common / JVM / iOS surface.

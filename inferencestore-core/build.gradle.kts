@@ -3,9 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val androidEnabled = System.getenv("ANDROID_HOME") != null ||
-    System.getenv("ANDROID_SDK_ROOT") != null ||
-    rootProject.file("local.properties").exists()
+val androidEnabled = System.getProperty("inferencestore.androidEnabled").toBoolean()
 
 if (androidEnabled) {
     apply(plugin = libs.plugins.android.library.get().pluginId)
