@@ -118,6 +118,12 @@ Proceed beyond the LiteRT-LM MVP adapter if at least 3 teams identify the same a
 
 Proceed to Meeseeks integration if at least 3 teams identify model download/warmup/pruning as a blocker.
 
+## MVP gate decision — waived (2026-06-13)
+
+The 8/15 interview signal was **waived by the maintainer** to begin the M1 build immediately, per the explicit-waiver path in Success criteria above. Rationale: the spec package (strategy, PRD, RFCs, ADRs, and the technical contracts) is complete and internally consistent, so the maintainer is proceeding on conviction and will gather adoption signal in the open — via the public RFC discussion (OSS-4 / #033) and the fake-provider validation demo (OSS-6 / #034) — rather than blocking implementation on interviews.
+
+Recorded on the gate issue OSS-1 (backlog #037), which is closed as Done. The M1 build chain (OSS-5 onward) is hereby unblocked.
+
 ## Red flags
 
 - Teams only want wrappers around one runtime.
