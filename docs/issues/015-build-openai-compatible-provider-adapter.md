@@ -1,8 +1,8 @@
 # Build OpenAI-compatible provider adapter
 
-Labels: `area/provider`, `type/feature`, `priority/p1`  
-Milestone: `M2 Alpha`  
-Dependencies: #3, #4, #14
+Labels: `area/provider`, `area/security`, `type/feature`, `priority/p1`  
+Milestone: `M1 Core prototype`  
+Dependencies: #3, #4, #21, #40, #37
 
 ## Problem
 
@@ -14,12 +14,13 @@ Implement `inferencestore-provider-openai-compatible` using configurable base UR
 
 ## Acceptance criteria
 
-- [ ] Adapter supports text/chat request mapping.
-- [ ] Adapter supports streaming where endpoint supports it.
-- [ ] Adapter maps rate limit, timeout, network, and server errors.
-- [ ] Adapter redacts secrets and prompts by default.
-- [ ] Mock-server tests cover success, streaming, and error mapping.
+- [ ] Streaming works against mock HTTP server.
+- [ ] Timeout/cancellation are mapped according to timeout contract.
+- [ ] HTTP 401/403/429/5xx map to stable categories.
+- [ ] API keys are never logged or traced.
+- [ ] Docs include mobile API-key guidance and backend-proxy recommendation.
+- [ ] Provider privacy boundary defaults to cloud/remote unless configured otherwise.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

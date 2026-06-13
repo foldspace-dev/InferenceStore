@@ -1,7 +1,7 @@
 # RFC-0004: Cache and artifact store
 
-Status: Draft  
-Generated: 2026-06-13
+Status: Accepted for MVP interfaces  
+Updated: 2026-06-13
 
 ## Summary
 
@@ -30,6 +30,7 @@ data class InferenceFingerprint(
     val promptVersion: String?,
     val outputVersion: String?,
     val privacyClass: String,
+    val privacyPolicyVersion: String?,
     val policyVersion: String?
 )
 ```
@@ -37,7 +38,7 @@ data class InferenceFingerprint(
 ## MVP scope
 
 - interfaces
-- in-memory implementation
+- minimal in-memory implementation
 - cache outcome events
 - no SQLDelight implementation yet
 
@@ -47,3 +48,8 @@ data class InferenceFingerprint(
 - encrypted recipes
 - route journal persistence
 - provider inventory persistence
+
+
+## Privacy note
+
+Persistence requires both cache-policy permission and `PrivacyPolicy.persistence` permission. See `docs/technical/privacy-model.md`.

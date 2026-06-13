@@ -22,4 +22,4 @@ Publish RFC-0001 and RFC-0002 as GitHub discussions and solicit feedback from St
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

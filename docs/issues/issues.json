@@ -9,15 +9,17 @@
     ],
     "milestone": "M1 Core prototype",
     "problem": "The project needs a KMP repository layout that can support a small stable core plus optional provider, storage, testkit, and Meeseeks modules.",
-    "proposal": "Create Gradle/KMP skeleton with core, testkit, provider-openai-compatible placeholder, samples, docs, and CI-ready build structure.",
+    "proposal": "Create Gradle/KMP skeleton with core, testkit, provider-openai-compatible placeholder, provider-litertlm Android/JVM placeholder, samples, docs, and CI-ready build structure.",
     "acceptance": [
       "Repository builds with `./gradlew build`.",
       "`inferencestore-core` compiles for common/JVM/Android/iOS targets.",
       "`inferencestore-testkit` module exists.",
-      "Placeholder provider module exists but does not affect core dependencies.",
+      "Placeholder OpenAI-compatible and LiteRT-LM provider modules exist but do not affect core dependencies.",
       "README includes current module map."
     ],
-    "dependencies": []
+    "dependencies": [
+      37
+    ]
   },
   {
     "id": 2,
@@ -28,17 +30,19 @@
       "priority/p0"
     ],
     "milestone": "M1 Core prototype",
-    "problem": "Inference requests need a stable shape that captures key, input, output type, privacy, cache, policy, timeout, prompt version, and metadata.",
+    "problem": "Inference requests need a stable shape that captures key, input, output type, canonical privacy policy, cache, policy, timeout, retry, prompt version, and metadata.",
     "proposal": "Implement `InferenceRequest`, `InferenceKey`, `InferenceInput`, `OutputSpec`, `PromptSpec`, and basic convenience builders.",
     "acceptance": [
       "Text and message inputs are supported.",
       "Text output spec is supported.",
       "JSON/typed output spec API is sketched or implemented behind serialization.",
-      "Request has privacy and cache defaults.",
+      "Request has canonical `PrivacyPolicy`, `TimeoutPolicy`, and `RetryPolicy` fields.",
+      "`InferenceKey` is required for cache/dedupe/artifacts; convenience ephemeral keys are documented.",
       "Unit tests cover request creation and equality/fingerprint-relevant fields."
     ],
     "dependencies": [
-      1
+      1,
+      37
     ]
   },
   {
@@ -51,17 +55,18 @@
     ],
     "milestone": "M1 Core prototype",
     "problem": "Provider adapters need a common contract for availability, capabilities, streaming execution, and metadata.",
-    "proposal": "Implement `InferenceProvider`, `ProviderId`, `ProviderKind`, `ProviderAvailability`, `Capability`, `CapabilityReport`, `ProviderMetadata`, `ProviderEvent`, and `ProviderError`.",
+    "proposal": "Implement provider contract with provider ID, kind, privacy boundary, availability, capability reports, streaming, provider metadata, and stable error mapping.",
     "acceptance": [
-      "Providers can report availability without executing inference.",
-      "Providers can report capability support for a request.",
-      "Provider events support started/token/completed/failed.",
+      "Provider contract includes `ProviderPrivacyBoundary`.",
+      "Availability and capability checks are suspending and bounded by timeout policy.",
       "Provider errors map to stable categories.",
-      "No provider-specific dependencies enter core."
+      "Provider metadata includes model/runtime/boundary fields.",
+      "Docs explain adapter responsibilities and non-responsibilities."
     ],
     "dependencies": [
       1,
-      2
+      2,
+      37
     ]
   },
   {
@@ -76,15 +81,16 @@
     "problem": "Feature code needs a single API for streaming and non-streaming inference.",
     "proposal": "Implement `InferenceStore.stream(request)` and `InferenceStore.generate(request)` in core, backed by a simple execution controller.",
     "acceptance": [
-      "`stream` returns a cold Flow.",
-      "`generate` collects stream and returns final result.",
-      "Cancellation of collection cancels provider execution where possible.",
-      "Event sequence includes Started, ProviderSelected, Token, Done/Failed.",
-      "Unit tests cover success, failure, and cancellation."
+      "`stream(request)` returns a cold Flow.",
+      "`generate(request)` is implemented as a convenience over terminal success.",
+      "Canonical events from `event-model.md` are emitted in documented order.",
+      "Cancellation is terminal and does not fallback.",
+      "Main-safety contract is documented and tested with fake blocking provider."
     ],
     "dependencies": [
       2,
-      3
+      3,
+      37
     ]
   },
   {
@@ -96,22 +102,23 @@
       "priority/p0"
     ],
     "milestone": "M1 Core prototype",
-    "problem": "Users need to know which provider served an inference request and why fallback occurred.",
-    "proposal": "Add `InferenceEvent`, `InferenceResult`, `RouteTrace`, `ProviderAttemptTrace`, and route metadata to all results.",
+    "problem": "Users need a canonical route trace and event model to understand provider selection, privacy rejection, fallback, validation, timeout, and completion.",
+    "proposal": "Implement route trace and canonical event model from `docs/technical/event-model.md`.",
     "acceptance": [
-      "Every result includes a `RouteTrace`.",
-      "Every provider attempt is captured with provider ID/kind/model metadata when available.",
-      "Fallback reason can be represented.",
-      "Failed requests include trace information.",
-      "Tests assert trace content."
+      "Event model matches `event-model.md`.",
+      "Trace records attempted providers and rejected providers.",
+      "Trace records fallback reasons and error categories.",
+      "Trace records privacy denials without provider invocation.",
+      "Golden JSON traces exist for success, fallback, validation repair, timeout, cancellation, and privacy denial."
     ],
     "dependencies": [
-      4
+      4,
+      37
     ]
   },
   {
     "id": 6,
-    "title": "Implement built-in local/cloud policy presets",
+    "title": "Implement five built-in local/cloud policy presets",
     "labels": [
       "area/policy",
       "type/feature",
@@ -119,18 +126,20 @@
     ],
     "milestone": "M1 Core prototype",
     "problem": "The MVP needs simple but useful policies that prove the local/cloud routing model.",
-    "proposal": "Implement `localOnly`, `cloudOnly`, `preferLocalThenCloud`, `preferCloudThenLocal`, and `validateLocalRepairWithCloud`.",
+    "proposal": "Implement `localOnly`, `cloudOnly`, `preferLocalThenCloud`, `preferCloudThenLocal`, and `validateLocalThenCloudRepair`.",
     "acceptance": [
       "Policies choose providers based on kind, availability, and capabilities.",
       "Policy results are deterministic.",
       "Privacy guardrails cannot be bypassed by policy.",
-      "Tests cover all built-ins.",
-      "Docs show when to use each policy."
+      "Tests cover all five built-ins.",
+      "Docs show when to use each policy.",
+      "No separate `privacyFirst` preset exists in MVP."
     ],
     "dependencies": [
       3,
       4,
-      5
+      5,
+      37
     ]
   },
   {
@@ -143,17 +152,20 @@
     ],
     "milestone": "M1 Core prototype",
     "problem": "Cloud fallback must not happen accidentally for sensitive/local-only requests.",
-    "proposal": "Implement `PrivacyPolicy`, privacy classifications, cloud permission, persistence permission, telemetry permission, and enforcement in execution controller.",
+    "proposal": "Implement `PrivacyPolicy`, `PrivacyClass`, `CloudPermission`, `PersistencePermission`, `TelemetryPermission`, provider boundary checks, and execution-controller enforcement exactly as specified in `privacy-model.md`.",
     "acceptance": [
-      "`LocalOnly` requests never invoke cloud providers.",
-      "Sensitive/default profiles are documented.",
+      "`LocalOnly` requests never invoke cloud/remote/hybrid providers.",
+      "`Personal` default denies cloud.",
+      "Approved cloud providers can be explicitly allowed.",
       "Execution controller enforces privacy independent of policy.",
       "Tests prove denied providers were not invoked.",
-      "Monitor events are redacted by default."
+      "Monitor events are redacted by default.",
+      "No `AllowsCloud` class or ad hoc privacy flags remain in public API."
     ],
     "dependencies": [
       4,
-      6
+      6,
+      37
     ]
   },
   {
@@ -168,16 +180,17 @@
     "problem": "Local model output may be malformed or inadequate; validation should be able to trigger fallback or repair.",
     "proposal": "Implement `OutputValidator`, `ValidationResult`, predicate validator helpers, and execution logic for fallback on validation failure.",
     "acceptance": [
-      "Predicate validators can pass/fail final output.",
-      "Validation result is included in route trace.",
-      "Policy can fall back on validation failure.",
-      "Schema/JSON validation has either initial implementation or RFC stub.",
-      "Tests cover local invalid -> cloud repair."
+      "Predicate validator works on final output.",
+      "Parser/schema failure maps to stable error categories.",
+      "Validation failure can trigger configured fallback/repair.",
+      "Partial validation is explicitly out of MVP.",
+      "Tests cover local-invalid -> cloud-repair route."
     ],
     "dependencies": [
       4,
       5,
-      6
+      6,
+      37
     ]
   },
   {
@@ -192,15 +205,16 @@
     "problem": "Developers need deterministic tests without real models or cloud calls.",
     "proposal": "Implement `FakeInferenceProvider`, scripted responses, failure injection, streaming scripts, and route assertion helpers.",
     "acceptance": [
-      "Fake provider can stream tokens.",
-      "Fake provider can be unavailable.",
-      "Fake provider can fail with stable error categories.",
-      "Assertions support attempted/fellBackTo/completedWith/didNotAttempt.",
-      "Examples in docs compile."
+      "Fake providers support scripted tokens, completion, delays, cancellation, and every stable error category.",
+      "Route assertions cover attempted/fellBackTo/completedWith/rejected/didNotAttempt.",
+      "Virtual clock supports timeouts/retries.",
+      "Privacy assertions prove provider invocation count is zero when denied.",
+      "Dedupe fan-out assertions are available."
     ],
     "dependencies": [
       3,
-      5
+      5,
+      37
     ]
   },
   {
@@ -215,9 +229,9 @@
     "problem": "Caching and dedupe require a stable fingerprint that accounts for input, prompt, output, privacy, and policy-relevant fields.",
     "proposal": "Implement `InferenceFingerprint` and default fingerprinting strategy with extension hooks.",
     "acceptance": [
-      "Fingerprint includes key, input hash, prompt version, output version, privacy class, and policy version if present.",
+      "Fingerprint includes key, input hash, prompt version, output version, privacy class, privacy policy version, and policy version if present.",
       "Raw input is not stored in the fingerprint.",
-      "Tests cover prompt/input/privacy changes.",
+      "Tests cover prompt/input/privacy/policy changes.",
       "Docs warn about user/account scoping."
     ],
     "dependencies": [
@@ -236,16 +250,19 @@
     ],
     "milestone": "M2 Alpha",
     "problem": "Equivalent concurrent requests should not cause duplicate provider invocations when policy allows sharing.",
-    "proposal": "Add in-flight request coalescing keyed by fingerprint and compatible policy/cache settings.",
+    "proposal": "Implement request deduplication according to `threading-dispatchers.md`, including MVP stream join-before-token behavior and `generate()` in-flight terminal joining.",
     "acceptance": [
-      "Concurrent equivalent requests share one provider call.",
-      "Requests with dedupe disabled do not share.",
-      "Privacy settings can prevent dedupe.",
-      "Cancellation of one collector does not cancel shared work while another collector remains.",
-      "Tests cover success, failure, and cancellation."
+      "Equivalent concurrent `generate()` requests share one provider invocation.",
+      "Equivalent `stream()` collectors before first content share one provider invocation.",
+      "Late stream collector after first content starts a new invocation or reads cache.",
+      "Cancellation is reference counted.",
+      "Tests cover privacy/policy incompatibility and no-sharing cases."
     ],
     "dependencies": [
-      10
+      2,
+      4,
+      9,
+      39
     ]
   },
   {
@@ -261,9 +278,9 @@
     "proposal": "Add `InferenceCache`, `InferenceArtifactStore`, `InferenceArtifact`, `CachePolicy`, and `CacheOutcome` interfaces/types.",
     "acceptance": [
       "Core can read before provider execution when cache policy allows.",
-      "Core can write successful results when cache policy allows.",
+      "Core can write successful results only when cache policy and privacy policy both allow.",
       "Artifact includes provider/model/trace/validation metadata.",
-      "Privacy policy can disable prompt/output persistence.",
+      "Artifact can omit/redact prompt/output content.",
       "Docs explain why this is not exactly Store SourceOfTruth."
     ],
     "dependencies": [
@@ -321,23 +338,27 @@
     "title": "Build OpenAI-compatible provider adapter",
     "labels": [
       "area/provider",
+      "area/security",
       "type/feature",
       "priority/p1"
     ],
-    "milestone": "M2 Alpha",
+    "milestone": "M1 Core prototype",
     "problem": "The MVP needs a real cloud/remote provider adapter that works with many OpenAI-compatible endpoints.",
     "proposal": "Implement `inferencestore-provider-openai-compatible` using configurable base URL, API key provider, model name, and streaming support.",
     "acceptance": [
-      "Adapter supports text/chat request mapping.",
-      "Adapter supports streaming where endpoint supports it.",
-      "Adapter maps rate limit, timeout, network, and server errors.",
-      "Adapter redacts secrets and prompts by default.",
-      "Mock-server tests cover success, streaming, and error mapping."
+      "Streaming works against mock HTTP server.",
+      "Timeout/cancellation are mapped according to timeout contract.",
+      "HTTP 401/403/429/5xx map to stable categories.",
+      "API keys are never logged or traced.",
+      "Docs include mobile API-key guidance and backend-proxy recommendation.",
+      "Provider privacy boundary defaults to cloud/remote unless configured otherwise."
     ],
     "dependencies": [
       3,
       4,
-      14
+      21,
+      40,
+      37
     ]
   },
   {
@@ -350,19 +371,20 @@
     ],
     "milestone": "M2 Alpha",
     "problem": "The project needs a concrete demo that explains the value better than architecture docs.",
-    "proposal": "Build a sample note summarizer using fake local provider, OpenAI-compatible cloud provider, privacy toggle, and route trace display.",
+    "proposal": "Build a sample note summarizer using fake local provider mode, optional LiteRT-LM local provider mode, OpenAI-compatible cloud provider, privacy toggle, validation demo, and route trace display.",
     "acceptance": [
-      "Sample runs on JVM or Android initially.",
-      "Local success scenario works.",
+      "Sample runs with fake providers without external model/API.",
+      "Sample can run LiteRT-LM path when model path env/config is supplied.",
       "Local unavailable -> cloud fallback scenario works.",
-      "Private/local-only scenario refuses cloud.",
+      "Private/local-only scenario refuses cloud and proves zero invocation.",
       "Route trace is visible in logs or UI."
     ],
     "dependencies": [
       6,
       7,
       9,
-      15
+      15,
+      38
     ]
   },
   {
@@ -378,14 +400,16 @@
     "proposal": "Create Quickstart with dependency setup, fake provider, OpenAI-compatible provider, policy, streaming, and tests.",
     "acceptance": [
       "Quickstart includes Gradle version catalog and Kotlin DSL examples.",
-      "Quickstart shows local-first/cloud-fallback.",
+      "Quickstart shows local-first/cloud-fallback with fake providers.",
+      "Quickstart shows optional LiteRT-LM model-path setup.",
       "Quickstart shows route trace.",
       "Quickstart shows privacy local-only test.",
       "All code snippets compile in sample/test."
     ],
     "dependencies": [
       15,
-      16
+      16,
+      38
     ]
   },
   {
@@ -403,13 +427,16 @@
     "acceptance": [
       "Guide explains adapter responsibilities and non-responsibilities.",
       "Guide includes minimal provider implementation.",
-      "Guide includes adapter test checklist.",
-      "Guide explains maturity levels.",
-      "Guide lists known adapter candidates."
+      "Guide includes threading/dispatcher requirements.",
+      "Guide includes error mapping checklist.",
+      "Guide includes privacy boundary requirements.",
+      "Guide explains maturity levels and known adapter candidates."
     ],
     "dependencies": [
       3,
-      9
+      9,
+      39,
+      40
     ]
   },
   {
@@ -442,7 +469,7 @@
       "type/feature",
       "priority/p2"
     ],
-    "milestone": "M3 Production hardening",
+    "milestone": "M4 Production hardening",
     "problem": "Policies may need recent failure/cooldown information to avoid repeatedly choosing bad providers.",
     "proposal": "Define `RouteJournal` and in-memory implementation for provider attempt history, failures, and cooldowns.",
     "acceptance": [
@@ -463,46 +490,50 @@
     "labels": [
       "area/reliability",
       "type/feature",
-      "priority/p1"
+      "priority/p0"
     ],
-    "milestone": "M2 Alpha",
+    "milestone": "M1 Core prototype",
     "problem": "Provider calls need predictable timeout and retry behavior before fallback.",
-    "proposal": "Add attempt timeout support and stable retry/fallback categories. Keep retry minimal in core; prefer fallback over hidden retries.",
+    "proposal": "Implement `TimeoutPolicy`, `RetryPolicy`, timeout source metadata, retry events if enabled, and fallback behavior according to `timeout-retry-policy.md`.",
     "acceptance": [
-      "Request-level timeout works.",
-      "Attempt-level timeout works.",
-      "Timeout maps to stable error/fallback reason.",
-      "Retries are explicit and observable if implemented.",
-      "Tests cover timeout -> fallback."
+      "Request-level deadline works and is terminal.",
+      "Attempt-level timeout works and may fallback.",
+      "Time-to-first-token and idle stream timeout are represented or explicitly deferred.",
+      "Timeout maps to stable error/fallback reason with source metadata.",
+      "Retries are disabled by default and observable when enabled.",
+      "Tests cover timeout -> fallback and request deadline -> terminal failure."
     ],
     "dependencies": [
       4,
-      6
+      5,
+      40,
+      37
     ]
   },
   {
     "id": 22,
-    "title": "Evaluate first local adapter choice",
+    "title": "Decide first real local adapter: LiteRT-LM",
     "labels": [
       "area/research",
       "area/provider",
-      "type/research",
-      "priority/p1"
+      "type/decision",
+      "priority/p0"
     ],
-    "milestone": "M2 Alpha",
-    "problem": "The first real local adapter should maximize learning without trapping the project in runtime churn.",
-    "proposal": "Compare Apple Foundation Models, Firebase AI Logic on-device/Android, Llamatik, Cactus, LiteRT-LM, and MLC LLM for first adapter.",
+    "milestone": "M0 Validation",
+    "problem": "The MVP must exercise a real local runtime instead of relying only on fake local providers.",
+    "proposal": "Accept LiteRT-LM Android/JVM as the first real local adapter. Defer iOS adapter choice to M3 mobile proof.",
     "acceptance": [
-      "Comparison matrix includes platform support, licensing, maturity, API stability, streaming, structured output, model management, and KMP fit.",
-      "Recommendation is documented.",
-      "Adapter issue is created for the selected choice.",
-      "Risks and deferred candidates are documented."
+      "Decision is recorded in ADR-0005.",
+      "LiteRT-LM adapter plan is documented.",
+      "MVP scope includes the LiteRT-LM Android/JVM adapter.",
+      "Issue #038 exists for implementation.",
+      "Deferred candidates and risks are documented."
     ],
     "dependencies": []
   },
   {
     "id": 23,
-    "title": "Prototype Android local/platform adapter",
+    "title": "Prototype Firebase AI Logic Android adapter",
     "labels": [
       "area/provider",
       "platform/android",
@@ -510,39 +541,44 @@
       "priority/p2"
     ],
     "milestone": "M3 Mobile proof",
-    "problem": "The project needs one real Android local or platform inference path to prove value on-device.",
-    "proposal": "Implement experimental Android adapter based on selected runtime/platform path.",
+    "problem": "Android teams may want to use Firebase AI Logic while preserving InferenceStore route traces and policy ownership.",
+    "proposal": "Prototype Firebase AI Logic as either separate logical on-device/cloud providers or a hybrid convenience provider that reports actual source metadata.",
     "acceptance": [
-      "Adapter compiles in Android target.",
-      "Availability and capability mapping are implemented.",
-      "Basic text generation works on supported environment or sample stub documents setup.",
-      "Unsupported devices/models return stable availability/capability reasons.",
-      "Adapter is marked experimental."
+      "Design chooses separate providers vs hybrid convenience wrapper.",
+      "Privacy boundary behavior is documented.",
+      "Capability limits are documented.",
+      "Route trace records whether Firebase used on-device or cloud when available.",
+      "Prototype does not change core API."
     ],
     "dependencies": [
-      22
+      3,
+      6,
+      7,
+      40
     ]
   },
   {
     "id": 24,
-    "title": "Prototype iOS local/platform adapter",
+    "title": "Decide and prototype first iOS local/platform adapter",
     "labels": [
       "area/provider",
       "platform/ios",
-      "type/feature",
+      "type/research",
       "priority/p2"
     ],
     "milestone": "M3 Mobile proof",
-    "problem": "The project needs an iOS path to prove KMP value beyond Android/JVM.",
-    "proposal": "Implement experimental iOS adapter based on selected platform/runtime path, likely behind expect/actual and Swift interop as needed.",
+    "problem": "The MVP starts with LiteRT-LM Android/JVM; iOS needs a deliberate adapter decision after core semantics settle.",
+    "proposal": "Compare Apple Foundation Models, LiteRT-LM Swift, Firebase AI Logic, Cactus, and Llamatik for the first iOS local/platform adapter.",
     "acceptance": [
-      "Adapter compiles for iOS target.",
-      "Availability/capability mapping is implemented.",
-      "Setup docs explain required OS/device constraints.",
-      "Unsupported devices return stable reasons.",
-      "Adapter is marked experimental."
+      "Comparison matrix includes platform support, maturity, streaming, structured output, model management, and KMP/Swift interop.",
+      "Recommendation is documented.",
+      "Prototype issue is created for selected choice.",
+      "Risks and deferred candidates are documented."
     ],
     "dependencies": [
+      3,
+      6,
+      7,
       22
     ]
   },
@@ -568,7 +604,6 @@
     ],
     "dependencies": [
       16,
-      23,
       24
     ]
   },
@@ -580,7 +615,7 @@
       "type/feature",
       "priority/p2"
     ],
-    "milestone": "M3 Production hardening",
+    "milestone": "M4 Production hardening",
     "problem": "Early adopters may need persistent artifacts and route traces.",
     "proposal": "Implement SQLDelight-backed artifact store and route journal prototype.",
     "acceptance": [
@@ -603,7 +638,7 @@
       "type/feature",
       "priority/p2"
     ],
-    "milestone": "M3 Production hardening",
+    "milestone": "M4 Production hardening",
     "problem": "Production teams need to export inference route metrics to their observability stack.",
     "proposal": "Implement optional OpenTelemetry exporter module for route spans and metrics.",
     "acceptance": [
@@ -625,7 +660,7 @@
       "type/feature",
       "priority/p2"
     ],
-    "milestone": "M4 Meeseeks lifecycle",
+    "milestone": "M5 Meeseeks lifecycle",
     "problem": "Foreground route planning benefits from cached provider/model availability, but probing every time can be expensive.",
     "proposal": "Add optional Meeseeks worker that refreshes provider inventory in the background.",
     "acceptance": [
@@ -647,7 +682,7 @@
       "type/feature",
       "priority/p3"
     ],
-    "milestone": "M4 Meeseeks lifecycle",
+    "milestone": "M5 Meeseeks lifecycle",
     "problem": "Local models may have high first-token latency unless warmed before use.",
     "proposal": "Define optional provider lifecycle interface and Meeseeks worker for model warmup.",
     "acceptance": [
@@ -670,7 +705,7 @@
       "type/feature",
       "priority/p3"
     ],
-    "milestone": "M4 Meeseeks lifecycle",
+    "milestone": "M5 Meeseeks lifecycle",
     "problem": "Apps may want to batch and retry telemetry upload without impacting foreground inference.",
     "proposal": "Add optional worker that uploads redacted route telemetry batches.",
     "acceptance": [
@@ -698,10 +733,11 @@
     "problem": "Users need clear guidance on privacy policies, cloud fallback, logging, persistence, and telemetry.",
     "proposal": "Write a security/privacy guide with defaults, examples, test assertions, and adapter checklist.",
     "acceptance": [
-      "Guide explains privacy profiles.",
+      "Guide explains canonical privacy model and profiles.",
       "Guide shows local-only cloud denial.",
       "Guide explains redaction defaults.",
       "Guide includes cache persistence advice.",
+      "Guide includes API-key/secret handling guidance.",
       "Guide includes adapter checklist."
     ],
     "dependencies": [
@@ -758,20 +794,19 @@
       "priority/p0"
     ],
     "milestone": "M0 Validation",
-    "problem": "Potential users need to see the value without waiting for real provider adapters.",
-    "proposal": "Create runnable JVM/CLI demo using fake local/cloud providers and three route scenarios.",
+    "problem": "Potential users need to see the value before the M1 implementation exists.",
+    "proposal": "Create a static/scripted validation demo using fake route traces or a throwaway script. Do not depend on M1 core implementation.",
     "acceptance": [
       "Demo shows local success.",
       "Demo shows local unavailable -> cloud fallback.",
       "Demo shows local schema invalid -> cloud repair.",
-      "Demo shows local-only privacy denial.",
-      "Demo prints route trace."
+      "Demo shows local-only privacy denial before cloud invocation.",
+      "Demo prints or displays canonical route trace.",
+      "Demo can run before M1 core issues are complete."
     ],
     "dependencies": [
-      4,
-      6,
-      8,
-      9
+      22,
+      37
     ]
   },
   {
@@ -818,6 +853,117 @@
       17,
       18,
       31
+    ]
+  },
+  {
+    "id": 37,
+    "title": "Run validation interviews and record MVP gate decision",
+    "labels": [
+      "area/research",
+      "area/community",
+      "type/task",
+      "priority/p0"
+    ],
+    "milestone": "M0 Validation",
+    "problem": "The validation plan says to proceed only if 8 of 15 target interviews say they would try the library, but the backlog did not previously include a gating issue.",
+    "proposal": "Run 15 target interviews, summarize the evidence, and record pass/fail/waive before M1 build work proceeds.",
+    "acceptance": [
+      "15 target interviews are completed or the shortfall is documented.",
+      "At least 8 interviewees say they would try it, or a maintainer waiver is recorded.",
+      "At least 5 concrete near-term use cases are captured or the miss is documented.",
+      "Adapter/runtime requests are summarized.",
+      "Go/no-go note is linked from README or validation plan.",
+      "M1 build issues explicitly reference this gate."
+    ],
+    "dependencies": []
+  },
+  {
+    "id": 38,
+    "title": "Implement LiteRT-LM Android/JVM local adapter",
+    "labels": [
+      "area/provider",
+      "platform/android",
+      "platform/jvm",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "The MVP must exercise real local inference behavior rather than only fake local providers.",
+    "proposal": "Implement the LiteRT-LM Android/JVM adapter according to `docs/technical/litert-lm-adapter.md`.",
+    "acceptance": [
+      "Adapter accepts explicit `.litertlm` model path and model ID.",
+      "Missing/unreadable model maps to `ProviderUnavailable`.",
+      "Text generation streams tokens through the provider contract.",
+      "Engine initialization runs off main/test UI dispatcher.",
+      "Timeout and cancellation clean up native/runtime resources.",
+      "Unsupported capabilities map to `CapabilityUnsupported`.",
+      "Route trace includes model/backend/runtime metadata and local privacy boundary.",
+      "Optional real-model test is enabled by `INFERENCESTORE_LITERTLM_MODEL_PATH`."
+    ],
+    "dependencies": [
+      3,
+      4,
+      5,
+      7,
+      21,
+      22,
+      37,
+      39,
+      40
+    ]
+  },
+  {
+    "id": 39,
+    "title": "Implement threading, cancellation, and dedupe fan-out contract",
+    "labels": [
+      "area/core",
+      "area/reliability",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Streaming-first KMP inference needs explicit dispatcher, cancellation, and fan-out semantics before local adapters are written around accidental behavior.",
+    "proposal": "Implement the core execution configuration, main-safety rules, cancellation semantics, and MVP dedupe fan-out behavior from `docs/technical/threading-dispatchers.md`.",
+    "acceptance": [
+      "`stream()` is cold and performs no provider work before collection.",
+      "Blocking provider work can be routed to configured execution context.",
+      "Caller cancellation is terminal and does not fallback.",
+      "Dedupe joins stream collectors only before first content event in MVP.",
+      "`generate()` can join an in-flight compatible request until terminal result.",
+      "Cancellation of one joined collector does not cancel upstream while others remain.",
+      "Tests cover late stream collector behavior and cancellation ref-counting."
+    ],
+    "dependencies": [
+      4,
+      9,
+      37
+    ]
+  },
+  {
+    "id": 40,
+    "title": "Implement error category to fallback mapping contract",
+    "labels": [
+      "area/core",
+      "area/reliability",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "The error taxonomy is useful only if every category has stable retry/fallback/terminal behavior.",
+    "proposal": "Implement the default mapping table from `docs/technical/error-fallback-mapping.md` and expose route assertions for it.",
+    "acceptance": [
+      "All stable error categories are represented in public/core model.",
+      "Default fallback behavior matches the mapping table.",
+      "Policy can restrict fallback but cannot redefine category defaults silently.",
+      "Provider adapters can attach raw causes without leaking them to redacted monitor events.",
+      "Tests cover each category and its fallback/terminal behavior.",
+      "Docs explain adapter error mapping expectations."
+    ],
+    "dependencies": [
+      5,
+      6,
+      9,
+      37
     ]
   }
 ]

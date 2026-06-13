@@ -1,6 +1,6 @@
 # User stories
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## App engineer stories
 
@@ -20,7 +20,7 @@ As an app engineer, I want cloud fallback when the local provider is unavailable
 
 Acceptance:
 
-- Given local provider is unavailable and cloud is allowed, when I request inference, then cloud provider is selected.
+- Given local provider is unavailable and the request `PrivacyPolicy` explicitly allows an approved cloud provider, when I request inference, then cloud provider is selected.
 - The result trace includes fallback reason.
 
 ### US-003: Privacy block
@@ -29,7 +29,7 @@ As an app engineer, I want cloud fallback blocked for local-only requests so tha
 
 Acceptance:
 
-- Given request privacy is local-only and local provider is unavailable, when I request inference, then the request fails with a policy violation.
+- Given request privacy is `PrivacyClass.LocalOnly` and local provider is unavailable, when I request inference, then the request fails with a policy violation.
 - The cloud provider is not invoked.
 
 ### US-004: Structured output repair
@@ -90,7 +90,7 @@ As a runtime maintainer, I want to implement one provider interface so that apps
 Acceptance:
 
 - Adapter guide exists.
-- Provider contract supports availability, capabilities, streaming, metadata, and errors.
+- Provider contract supports availability, capabilities, streaming, metadata, privacy boundary, threading/cancellation contract, and stable error mapping.
 - Testkit can verify adapter behavior.
 
 ## Meeseeks stories
@@ -112,3 +112,16 @@ Acceptance:
 
 - Warmup task can be scheduled with battery/network constraints.
 - Provider reports warmup support.
+
+
+### US-012: Real local adapter proof
+
+As a maintainer, I want the MVP to include a real LiteRT-LM local adapter so that the architecture is tested against model availability, initialization latency, cancellation, and runtime errors.
+
+Acceptance:
+
+- Adapter reports missing model path as provider unavailable.
+- Adapter streams text when a valid model path is supplied.
+- Initialization runs off the UI dispatcher.
+- Timeout/cancellation clean up resources.
+- Route trace records LiteRT-LM provider/model metadata.

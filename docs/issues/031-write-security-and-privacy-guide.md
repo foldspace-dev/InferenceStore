@@ -14,12 +14,13 @@ Write a security/privacy guide with defaults, examples, test assertions, and ada
 
 ## Acceptance criteria
 
-- [ ] Guide explains privacy profiles.
+- [ ] Guide explains canonical privacy model and profiles.
 - [ ] Guide shows local-only cloud denial.
 - [ ] Guide explains redaction defaults.
 - [ ] Guide includes cache persistence advice.
+- [ ] Guide includes API-key/secret handling guidance.
 - [ ] Guide includes adapter checklist.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

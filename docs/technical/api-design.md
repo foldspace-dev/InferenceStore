@@ -1,6 +1,6 @@
 # API design
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Design goals
 
@@ -11,6 +11,7 @@ Generated: 2026-06-13
 - Adapter-friendly.
 - Store-inspired but not Store-copying.
 - Privacy-safe defaults.
+- Real local-runtime behavior represented in core contracts without making core a runtime.
 
 ## Package sketch
 
@@ -25,6 +26,8 @@ dev.mattramotar.inferencestore.testkit
 ```
 
 ## Core API
+
+The root `InferenceStore` is not generic. Output type travels with each request.
 
 ```kotlin
 interface InferenceStore {
@@ -51,11 +54,14 @@ data class InferenceRequest<Output : Any>(
     val policy: InferencePolicy? = null,
     val privacy: PrivacyPolicy = PrivacyPolicy.Default,
     val cache: CachePolicy = CachePolicy.Default,
-    val timeout: Duration? = null,
+    val timeout: TimeoutPolicy = TimeoutPolicy.Default,
+    val retry: RetryPolicy = RetryPolicy.Default,
     val prompt: PromptSpec? = null,
     val metadata: Map<String, String> = emptyMap()
 )
 ```
+
+`InferenceKey` is required for durable cache/dedupe/artifact/trace semantics. Convenience APIs may create ephemeral keys only when cache and dedupe are disabled.
 
 ## Key
 
@@ -87,7 +93,7 @@ sealed interface InferenceInput {
 }
 ```
 
-MVP can support `Text` and `Messages`; multimodal inputs can be added later.
+MVP supports `Text` and `Messages`; multimodal inputs are post-MVP.
 
 ## Output spec
 
@@ -97,7 +103,8 @@ sealed interface OutputSpec<Output : Any> {
 
     data class Json<Output : Any>(
         val serializer: KSerializer<Output>,
-        val schema: JsonSchema? = null
+        val schema: JsonSchema? = null,
+        val validators: List<OutputValidator<Output>> = emptyList()
     ) : OutputSpec<Output>
 
     data class Custom<Output : Any>(
@@ -107,20 +114,27 @@ sealed interface OutputSpec<Output : Any> {
 }
 ```
 
+MVP validation is final-output only.
+
 ## Events
+
+The canonical event taxonomy lives in `docs/technical/event-model.md`. API snippets in other docs should stay aligned with that file.
 
 ```kotlin
 sealed interface InferenceEvent<out Output : Any> {
-    data class Started(val requestId: RequestId) : InferenceEvent<Nothing>
-    data class CacheChecked(val outcome: CacheOutcome) : InferenceEvent<Nothing>
-    data class RoutePlanned(val route: InferenceRoute) : InferenceEvent<Nothing>
-    data class ProviderSelected(val attempt: ProviderAttempt) : InferenceEvent<Nothing>
-    data class Token(val text: String) : InferenceEvent<Nothing>
-    data class Partial<Output : Any>(val value: Output) : InferenceEvent<Output>
-    data class ValidationCompleted(val result: ValidationResult) : InferenceEvent<Nothing>
-    data class FallbackStarted(val reason: FallbackReason, val next: ProviderId?) : InferenceEvent<Nothing>
-    data class Done<Output : Any>(val result: InferenceResult<Output>) : InferenceEvent<Output>
-    data class Failed(val error: InferenceError, val trace: RouteTrace) : InferenceEvent<Nothing>
+    data class Started(val requestId: RequestId, val key: InferenceKey) : InferenceEvent<Nothing>
+    data class CacheChecked(val requestId: RequestId, val outcome: CacheOutcome) : InferenceEvent<Nothing>
+    data class ProvidersEvaluated(val requestId: RequestId, val candidates: List<ProviderCandidateSummary>) : InferenceEvent<Nothing>
+    data class RouteSelected(val requestId: RequestId, val route: InferenceRouteSummary) : InferenceEvent<Nothing>
+    data class ProviderAttemptStarted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : InferenceEvent<Nothing>
+    data class Token(val requestId: RequestId, val text: String) : InferenceEvent<Nothing>
+    data class Partial<Output : Any>(val requestId: RequestId, val value: Output) : InferenceEvent<Output>
+    data class ValidationCompleted(val requestId: RequestId, val result: ValidationResult) : InferenceEvent<Nothing>
+    data class ProviderAttemptCompleted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : InferenceEvent<Nothing>
+    data class FallbackStarted(val requestId: RequestId, val reason: FallbackReason, val next: ProviderId?) : InferenceEvent<Nothing>
+    data class ArtifactStored(val requestId: RequestId, val outcome: ArtifactWriteOutcome) : InferenceEvent<Nothing>
+    data class Done<Output : Any>(val requestId: RequestId, val result: InferenceResult<Output>) : InferenceEvent<Output>
+    data class Failed(val requestId: RequestId, val error: InferenceError, val trace: RouteTrace) : InferenceEvent<Nothing>
 }
 ```
 
@@ -138,12 +152,15 @@ data class InferenceResult<Output : Any>(
 )
 ```
 
+`rawText` should not be persisted or emitted through telemetry unless privacy and cache policies explicitly allow it.
+
 ## Provider
 
 ```kotlin
 interface InferenceProvider {
     val id: ProviderId
     val kind: ProviderKind
+    val boundary: ProviderPrivacyBoundary
 
     suspend fun availability(
         context: InferenceContext
@@ -161,7 +178,7 @@ interface InferenceProvider {
 }
 ```
 
-## Provider IDs
+## Provider IDs and kinds
 
 ```kotlin
 @JvmInline
@@ -176,6 +193,8 @@ enum class ProviderKind {
 }
 ```
 
+`Platform` providers must still declare whether they are on-device, cloud-backed, or hybrid through `ProviderPrivacyBoundary`.
+
 ## Availability
 
 ```kotlin
@@ -187,9 +206,12 @@ sealed interface ProviderAvailability {
 
 sealed interface AvailabilityReason {
     data object MissingModel : AvailabilityReason
+    data object ModelUnreadable : AvailabilityReason
     data object DownloadRequired : AvailabilityReason
     data object NetworkUnavailable : AvailabilityReason
     data object UnsupportedDevice : AvailabilityReason
+    data object InsufficientMemory : AvailabilityReason
+    data object InitializationTimeout : AvailabilityReason
     data object DisabledByConfig : AvailabilityReason
     data object RateLimited : AvailabilityReason
     data class Other(val message: String) : AvailabilityReason
@@ -221,6 +243,7 @@ sealed interface Capability {
     data object AudioInput : Capability
     data object ToolCalling : Capability
     data object Offline : Capability
+    data object LocalExecution : Capability
 }
 ```
 
@@ -243,17 +266,21 @@ data class InferenceRoute(
     val attempts: List<RouteAttempt>,
     val maxAttempts: Int = attempts.size,
     val fallback: FallbackPolicy = FallbackPolicy.Default,
+    val timeout: TimeoutPolicy = TimeoutPolicy.Default,
+    val retry: RetryPolicy = RetryPolicy.Default,
     val cache: CachePolicy = CachePolicy.Default
 )
 
 data class RouteAttempt(
     val providerId: ProviderId,
     val reason: RouteReason,
-    val timeout: Duration? = null
+    val timeout: TimeoutPolicy? = null
 )
 ```
 
 ## Built-in policies
+
+Five MVP presets:
 
 ```kotlin
 object Policies {
@@ -261,10 +288,11 @@ object Policies {
     fun cloudOnly(): InferencePolicy
     fun preferLocalThenCloud(): InferencePolicy
     fun preferCloudThenLocal(): InferencePolicy
-    fun privacyFirst(): InferencePolicy
-    fun validateLocalRepairWithCloud(): InferencePolicy
+    fun validateLocalThenCloudRepair(): InferencePolicy
 }
 ```
+
+No separate `privacyFirst` preset. Privacy behavior comes from `PrivacyPolicy` and the execution controller.
 
 ## Validator
 
@@ -285,7 +313,7 @@ interface InferenceMonitor {
 }
 ```
 
-Monitor events should be redacted by default.
+Monitor events are redacted projections of canonical stream events. They must not introduce separate lifecycle semantics.
 
 ## Builder
 
@@ -298,6 +326,7 @@ class InferenceStoreBuilder {
     fun artifactStore(store: InferenceArtifactStore)
     fun validatorFactory(factory: ValidatorFactory)
     fun monitor(monitor: InferenceMonitor)
+    fun execution(config: InferenceExecutionConfig)
 }
 
 fun InferenceStore.Companion.build(
@@ -325,7 +354,7 @@ val local = FakeInferenceProvider("local") {
     stream("hello", " world")
 }
 
-val cloud = FakeInferenceProvider("cloud") {
+val cloud = FakeInferenceProvider("cloud", kind = ProviderKind.Cloud) {
     availability = Available
     supports(Capability.TextGeneration, Capability.StructuredOutput)
     complete("{\"summary\":\"hello world\"}")
@@ -339,23 +368,17 @@ val store = testInferenceStore {
 
 val result = store.generate(request)
 
-assertThat(result.trace).attempted("local")
-assertThat(result.trace).completedWith("local")
+assertRoute(result.trace) {
+    attempted("local")
+    completedWith("local")
+}
 ```
 
-## API questions to resolve in RFC
+## Resolved API questions
 
-1. Should `InferenceStore` be generic?  
-   Recommendation: no at the root; requests carry output specs.
-
-2. Should `OutputSpec` require serialization?  
-   Recommendation: only for typed JSON; text remains simple.
-
-3. Should provider events expose provider-specific data?  
-   Recommendation: through typed `metadata`, not public sealed classes.
-
-4. Should policies be composable DSL or plain functions first?  
-   Recommendation: plain functions first, DSL after patterns emerge.
-
-5. Should privacy be hardcoded enum or open type?  
-   Recommendation: built-in classes plus custom tags.
+1. Root `InferenceStore` generic? **No.** Requests carry output specs.
+2. `OutputSpec` requires serialization? **Only for typed JSON.** Text remains simple.
+3. Provider events expose provider-specific data? **Only via redacted metadata.**
+4. Policies composable DSL or functions first? **Plain functions/presets first; DSL after patterns emerge.**
+5. Privacy hardcoded enum or open type? **Five built-ins plus `Custom`, owned by `privacy-model.md`.**
+6. Partial validation in MVP? **No.** Final-output validation only.

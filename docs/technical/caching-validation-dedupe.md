@@ -1,6 +1,6 @@
 # Caching, validation, and deduplication
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Principle
 
@@ -12,13 +12,15 @@ They are outputs of a model under a specific request, prompt version, model vers
 
 A fingerprint should include:
 
-- key namespace/id/version
-- normalized input hash
-- prompt template ID/version
-- output spec/schema version
-- policy-relevant request metadata
-- privacy class
-- model/provider constraints if policy requires them
+- key namespace/id/version;
+- normalized input hash;
+- prompt template ID/version;
+- output spec/schema version;
+- policy-relevant request metadata;
+- privacy class;
+- privacy policy version;
+- policy version;
+- model/provider constraints if policy requires them.
 
 Example:
 
@@ -29,29 +31,44 @@ data class InferenceFingerprint(
     val promptVersion: String?,
     val outputVersion: String?,
     val privacyClass: String,
+    val privacyPolicyVersion: String?,
     val policyVersion: String?
 )
 ```
+
+Raw input, raw prompts, and raw outputs are never part of the stored fingerprint.
 
 ## Cache policy
 
 ```kotlin
 data class CachePolicy(
     val read: CacheRead = CacheRead.Allow,
-    val write: CacheWrite = CacheWrite.Allow,
+    val write: CacheWrite = CacheWrite.Deny,
     val dedupe: DedupePolicy = DedupePolicy.Allow,
     val ttl: Duration? = null,
-    val allowStaleWhileRevalidate: Boolean = false,
-    val persistPrompt: Boolean = false,
-    val persistOutput: Boolean = true
+    val allowStaleWhileRevalidate: Boolean = false
 )
 ```
 
-Privacy-sensitive defaults:
+Persistence flags live in `PrivacyPolicy.persistence`, not in ad hoc cache flags. A write happens only when:
 
-- `LocalOnly`: no cloud, no prompt persistence by default
-- `Sensitive`: no prompt persistence by default
-- `Public`: prompt/output persistence allowed if app opts in
+```text
+CachePolicy.write == Allow
+AND PrivacyPolicy.persistence permits the content being written
+AND artifact store accepts the artifact
+```
+
+## Privacy-sensitive defaults
+
+The canonical defaults are in `docs/technical/privacy-model.md`.
+
+Short version:
+
+- `Public`: cloud allowed; prompt/output persistence still requires cache opt-in.
+- `Internal`: approved cloud only; no prompt persistence by default.
+- `Personal`: cloud denied by default; no prompt/output persistence by default.
+- `Sensitive`: cloud denied by default; no prompt/output persistence by default.
+- `LocalOnly`: cloud hard-denied; no prompt/output persistence by default.
 
 ## Cache layers
 
@@ -61,10 +78,10 @@ Fast, process-local, optional.
 
 Use for:
 
-- repeated UI requests
-- deduping final outputs
-- route metadata
-- temporary artifacts
+- repeated UI requests;
+- deduping final outputs;
+- route metadata;
+- temporary artifacts.
 
 ### Artifact store
 
@@ -72,11 +89,11 @@ Persistent, optional.
 
 Use for:
 
-- generated summaries
-- structured extraction results
-- model availability status
-- route journal
-- validation outcomes
+- generated summaries;
+- structured extraction results;
+- model availability status;
+- route journal;
+- validation outcomes.
 
 ### Semantic cache
 
@@ -89,7 +106,7 @@ Semantic cache is difficult because similar prompts may not be equivalent. Defer
 ```kotlin
 data class InferenceArtifact<Output : Any>(
     val fingerprint: InferenceFingerprint,
-    val output: Output,
+    val output: Output?,
     val rawText: String?,
     val provider: ProviderMetadata,
     val trace: RouteTrace,
@@ -100,17 +117,20 @@ data class InferenceArtifact<Output : Any>(
 )
 ```
 
+`output` and `rawText` may be null/redacted when privacy permits only trace persistence.
+
 ## Artifact validity
 
 An artifact is valid only if:
 
-- fingerprint matches
-- TTL not expired
-- validator passes
-- model/provider version is acceptable
-- privacy policy allows reuse
-- output parser still accepts it
-- app-defined validator accepts it
+- fingerprint matches;
+- TTL not expired;
+- validator passes;
+- model/provider version is acceptable;
+- privacy policy allows reuse;
+- privacy policy version is compatible;
+- output parser still accepts it;
+- app-defined validator accepts it.
 
 ## Validators
 
@@ -131,11 +151,11 @@ Validates final JSON output against schema or serializer.
 
 Examples:
 
-- summary length under 150 words
-- extracted tasks have due dates
-- classification is one of allowed labels
-- citations are present
-- no placeholder values
+- summary length under 150 words;
+- extracted tasks have due dates;
+- classification is one of allowed labels;
+- citations are present;
+- no placeholder values.
 
 ### Evaluator hook
 
@@ -147,14 +167,14 @@ Not MVP unless implemented as a generic interface.
 
 MVP:
 
-- final-output validation only
+- final-output validation only.
 
 Post-MVP:
 
-- partial JSON validation
-- streaming guardrails
-- evaluator-based repair
-- side-by-side candidate selection
+- partial JSON validation;
+- streaming guardrails;
+- evaluator-based repair;
+- side-by-side candidate selection.
 
 ## Fallback on validation failure
 
@@ -164,9 +184,10 @@ Example flow:
 2. Parser fails or schema invalid.
 3. Validator emits `Fail`.
 4. Policy checks whether fallback is allowed.
-5. Cloud provider repairs/regenerates.
-6. Cloud output validates.
-7. Result trace includes both attempts.
+5. Privacy gate checks whether fallback provider may receive the request.
+6. Cloud provider repairs/regenerates.
+7. Cloud output validates.
+8. Result trace includes both attempts.
 
 ## Deduplication
 
@@ -174,30 +195,43 @@ Dedupe means concurrent equivalent requests share execution.
 
 Equivalent means:
 
-- same fingerprint
-- same policy or compatible policy
-- same privacy/cache settings
-- same output spec
-- dedupe allowed
+- same fingerprint;
+- same policy or compatible policy;
+- same privacy/cache settings;
+- same output spec;
+- dedupe allowed;
+- side-effect-free provider request.
 
 Example:
 
 ```text
 Screen A asks for note summary
-Screen B asks for same note summary 20ms later
+Screen B asks for same note summary 20ms later before first token
 => one provider call, two collectors
 ```
+
+## Dedupe fan-out contract
+
+The canonical fan-out and cancellation rules live in `docs/technical/threading-dispatchers.md`.
+
+MVP summary:
+
+- `stream()` collectors can join an in-flight dedupe group only before first content event;
+- late `stream()` collectors start a new provider call or read completed cache;
+- `generate()` can join an in-flight compatible request until terminal result;
+- upstream cancellation is reference counted;
+- cancellation of one collector does not cancel upstream while other joined collectors remain.
 
 ## Dedupe constraints
 
 Do not dedupe when:
 
-- request has `dedupe = Deny`
-- request includes non-shareable metadata
-- privacy policy forbids sharing
-- streaming consumers require independent provider sessions
-- provider has side effects
-- request uses tools with side effects
+- request has `dedupe = Deny`;
+- request includes non-shareable metadata;
+- privacy policy forbids sharing;
+- streaming consumer joins after first content in MVP;
+- provider has side effects;
+- request uses tools with side effects.
 
 ## Store-inspired semantics
 
@@ -221,14 +255,18 @@ Policy may invalidate artifacts from a model version.
 
 If user toggles “private,” previously cloud-generated artifacts may become unusable for that feature.
 
+### Privacy policy version changed
+
+Cache reuse is denied unless app supplies a compatibility rule.
+
 ### Input changed
 
 Input hash changes, artifact invalid.
 
-## Open questions
+## Resolved questions
 
-1. Should raw prompts ever be persisted by default? Recommendation: no.
-2. Should raw text be persisted when typed output exists? Recommendation: opt-in.
-3. Should route traces be persisted separately from outputs? Recommendation: yes.
-4. Should cache be in MVP? Recommendation: interfaces yes, implementation minimal.
-5. Should semantic cache be part of strategy? Recommendation: later, use-case-driven.
+1. Should raw prompts ever be persisted by default? **No.**
+2. Should raw text be persisted when typed output exists? **Opt-in only.**
+3. Should route traces be persisted separately from outputs? **Yes, redacted.**
+4. Should cache be in MVP? **Interfaces and in-memory minimal implementation; persistent store later.**
+5. Should semantic cache be part of strategy? **Later, use-case-driven.**

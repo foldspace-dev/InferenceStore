@@ -1,7 +1,7 @@
 # Add SQLDelight artifact store prototype
 
 Labels: `area/storage`, `type/feature`, `priority/p2`  
-Milestone: `M3 Production hardening`  
+Milestone: `M4 Production hardening`  
 Dependencies: #12, #20
 
 ## Problem
@@ -22,4 +22,4 @@ Implement SQLDelight-backed artifact store and route journal prototype.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

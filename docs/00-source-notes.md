@@ -1,8 +1,8 @@
 # Source notes
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
-This project plan was grounded in the current public docs for Store, Meeseeks, and several hybrid/on-device inference projects.
+This project plan was grounded in the current public docs for Store, Meeseeks, and several hybrid/on-device inference projects. These links are source notes, not normative project requirements.
 
 ## Store
 
@@ -37,8 +37,11 @@ Relevant links:
 
 - Firebase AI Logic Hybrid API for Android: https://firebase.google.com/docs/ai-logic/hybrid/android/get-started
 - Android hybrid inference docs: https://developer.android.com/ai/hybrid
-- Apple Foundation Models / Apple Intelligence guide: https://developer.apple.com/wwdc26/guides/apple-intelligence/
-- LiteRT-LM: https://developers.google.com/edge/litert-lm/overview
+- Apple Foundation Models documentation: https://developer.apple.com/documentation/foundationmodels/
+- Apple Foundation Models provider protocol WWDC26 session: https://developer.apple.com/videos/play/wwdc2026/339/
+- LiteRT-LM overview: https://developers.google.com/edge/litert-lm/overview
+- LiteRT-LM Android/Kotlin guide: https://developers.google.com/edge/litert-lm/android
+- LiteRT-LM Swift guide: https://developers.google.com/edge/litert-lm/swift
 - ExecuTorch: https://executorch.ai/
 - MLC LLM: https://llm.mlc.ai/
 - Cactus Kotlin: https://github.com/cactus-compute/cactus-kotlin
@@ -47,8 +50,10 @@ Relevant links:
 
 ## Interpretation
 
-The docs support three product conclusions:
+The docs support five product conclusions:
 
 1. Store's durable value is orchestration semantics, not caching alone.
 2. Meeseeks can provide the background execution substrate for model lifecycle and deferred inference work.
 3. The inference runtime layer is already crowded and volatile, so InferenceStore should be provider/runtime-neutral.
+4. MVP should still include one real local adapter; otherwise the plan does not test local-runtime failure modes.
+5. LiteRT-LM is a strong first real local adapter candidate because it exercises local-runtime lifecycle without requiring InferenceStore to become a runtime.

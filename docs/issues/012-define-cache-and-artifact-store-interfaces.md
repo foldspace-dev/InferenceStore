@@ -15,11 +15,11 @@ Add `InferenceCache`, `InferenceArtifactStore`, `InferenceArtifact`, `CachePolic
 ## Acceptance criteria
 
 - [ ] Core can read before provider execution when cache policy allows.
-- [ ] Core can write successful results when cache policy allows.
+- [ ] Core can write successful results only when cache policy and privacy policy both allow.
 - [ ] Artifact includes provider/model/trace/validation metadata.
-- [ ] Privacy policy can disable prompt/output persistence.
+- [ ] Artifact can omit/redact prompt/output content.
 - [ ] Docs explain why this is not exactly Store SourceOfTruth.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

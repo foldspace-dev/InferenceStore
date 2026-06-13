@@ -1,21 +1,25 @@
 # Testing strategy
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Goal
 
-Make inference routing deterministic enough to unit test.
+Make inference routing deterministic enough to unit test while still proving one real local adapter path.
 
 Developers should not need real local models or cloud providers to test:
 
-- route decisions
-- fallback
-- validation
-- cancellation
-- streaming event order
-- cache behavior
-- privacy enforcement
-- monitoring redaction
+- route decisions;
+- fallback;
+- validation;
+- cancellation;
+- timeout/retry behavior;
+- streaming event order;
+- cache behavior;
+- privacy enforcement;
+- monitoring redaction;
+- dedupe fan-out.
+
+The project itself still needs optional real-adapter tests for LiteRT-LM and OpenAI-compatible providers.
 
 ## Testkit module
 
@@ -29,6 +33,7 @@ inferencestore-testkit
 class FakeInferenceProvider(
     override val id: ProviderId,
     override val kind: ProviderKind = ProviderKind.Test,
+    override val boundary: ProviderPrivacyBoundary = ProviderPrivacyBoundary.localTest(),
     private val script: ProviderScript
 ) : InferenceProvider
 ```
@@ -44,6 +49,7 @@ class ProviderScript {
     fun complete(text: String)
     fun fail(error: ProviderError)
     fun delay(duration: Duration)
+    fun blockUntilCancelled()
 }
 ```
 
@@ -59,12 +65,18 @@ assertRoute(result.trace) {
 
 ## Event assertions
 
+Event assertions must follow `docs/technical/event-model.md`.
+
 ```kotlin
 assertEvents(events) {
     started()
-    providerSelected("local")
+    cacheChecked(CacheOutcome.Miss)
+    providersEvaluated()
+    routeSelected()
+    providerAttemptStarted("local")
     token("hello")
     validationPassed()
+    providerAttemptCompleted("local")
     done()
 }
 ```
@@ -74,8 +86,12 @@ assertEvents(events) {
 ```kotlin
 assertRoute(trace) {
     didNotAttempt("cloud")
-    failedBecause(PolicyViolation.CloudNotAllowed)
+    rejected("cloud", PolicyViolation.CloudNotAllowed)
 }
+```
+
+```kotlin
+cloudProvider.assertInvocations(0)
 ```
 
 ## Cancellation tests
@@ -95,6 +111,45 @@ job.cancel()
 provider.assertCancelled()
 ```
 
+Cancellation is terminal and should not fallback.
+
+## Timeout tests
+
+The testkit virtual clock must support:
+
+- availability timeout;
+- attempt timeout;
+- request deadline;
+- time-to-first-token timeout;
+- idle stream timeout;
+- validation timeout;
+- retry backoff.
+
+Example:
+
+```kotlin
+@Test
+fun attemptTimeoutFallsBackToCloud() = runTest {
+    val local = fakeProvider("local", ProviderKind.Local) {
+        delay(10.seconds)
+        complete("late")
+    }
+    val cloud = fakeProvider("cloud", ProviderKind.Cloud) {
+        complete("fallback")
+    }
+
+    val result = store.generate(
+        request.copy(timeout = TimeoutPolicy(attemptTimeout = 500.milliseconds))
+    )
+
+    assertRoute(result.trace) {
+        failed("local", ErrorCategory.Timeout)
+        fellBackTo("cloud", FallbackReason.Timeout)
+        completedWith("cloud")
+    }
+}
+```
+
 ## Validator tests
 
 ```kotlin
@@ -111,18 +166,24 @@ assertRoute(result.trace) {
 
 ## Cache tests
 
-- cache hit returns cached result
-- stale cache triggers provider call
-- privacy no-persist does not write
-- prompt version invalidates cache
-- output schema version invalidates cache
+- cache hit returns cached result;
+- stale cache triggers provider call;
+- privacy no-persist does not write;
+- prompt version invalidates cache;
+- output schema version invalidates cache;
+- privacy class/policy version invalidates cache.
 
 ## Dedupe tests
 
-- two equivalent concurrent requests produce one provider invocation
-- non-equivalent requests do not dedupe
-- privacy-disabled dedupe does not share
-- cancellation of one collector does not cancel shared upstream while other collectors remain
+MVP dedupe tests must match `threading-dispatchers.md`:
+
+- two equivalent concurrent `generate()` calls produce one provider invocation;
+- two equivalent `stream()` collectors before first token produce one provider invocation;
+- late streaming collector after first token starts a new invocation or reads cache;
+- non-equivalent requests do not dedupe;
+- privacy-disabled dedupe does not share;
+- cancellation of one joined collector does not cancel shared upstream while other collectors remain;
+- cancellation of all collectors cancels upstream exactly once.
 
 ## Golden tests
 
@@ -134,8 +195,8 @@ Example:
 {
   "policy": "preferLocalThenCloud",
   "attempts": [
-    {"provider": "local", "status": "failed", "reason": "SchemaInvalid"},
-    {"provider": "cloud", "status": "success"}
+    {"provider": "litertlm-local", "status": "failed", "reason": "SchemaInvalid"},
+    {"provider": "openai-compatible", "status": "success"}
   ]
 }
 ```
@@ -144,15 +205,29 @@ Example:
 
 Each adapter must test:
 
-- availability mapping
-- capability mapping
-- success
-- streaming
-- cancellation
-- timeout
-- rate limit
-- provider-specific error mapping
-- redaction
+- availability mapping;
+- capability mapping;
+- success;
+- streaming;
+- cancellation;
+- timeout;
+- rate limit;
+- provider-specific error mapping;
+- redaction;
+- provider privacy boundary.
+
+## LiteRT-LM adapter tests
+
+LiteRT-LM-specific tests:
+
+- missing model path -> `ProviderUnavailable`;
+- unreadable model -> `ProviderUnavailable`;
+- initialization timeout -> `Timeout`;
+- initialization runs off main/test UI dispatcher;
+- generation cancellation closes conversation;
+- route trace includes model ID/backend/runtime metadata;
+- no prompt/output in monitor events by default;
+- optional real-model streaming test enabled by `INFERENCESTORE_LITERTLM_MODEL_PATH`.
 
 ## Integration tests
 
@@ -163,31 +238,34 @@ Environment variables can enable them:
 ```text
 INFERENCESTORE_OPENAI_COMPATIBLE_BASE_URL
 INFERENCESTORE_OPENAI_COMPATIBLE_API_KEY
+INFERENCESTORE_LITERTLM_MODEL_PATH
 ```
 
 ## CI target matrix
 
 MVP:
 
-- JVM
-- Android unit tests
-- iOS simulator compile
-- common tests
+- JVM;
+- Android unit tests;
+- iOS simulator compile;
+- common tests;
+- optional LiteRT-LM JVM real-model test when model path exists.
 
 Post-MVP:
 
-- iOS integration sample
-- JS if core supports it
-- binary compatibility validation
-- dokka docs
+- iOS integration sample;
+- JS if core supports it;
+- binary compatibility validation;
+- dokka docs.
 
 ## Testing principles
 
 1. Route tests should not depend on model quality.
 2. Privacy tests should prove providers were not invoked.
 3. Adapter tests should map errors, not assert provider internals.
-4. Streaming tests should assert event order.
+4. Streaming tests should assert canonical event order.
 5. Policy tests should be readable enough to serve as documentation.
+6. Real-runtime tests should validate lifecycle/failure behavior, not benchmark quality.
 
 ## Example test
 
@@ -207,7 +285,7 @@ fun localSchemaFailureFallsBackToCloudRepair() = runTest {
     val store = testInferenceStore {
         provider(local)
         provider(cloud)
-        policy(Policies.validateLocalRepairWithCloud())
+        policy(Policies.validateLocalThenCloudRepair())
     }
 
     val result = store.generate(summaryRequest)

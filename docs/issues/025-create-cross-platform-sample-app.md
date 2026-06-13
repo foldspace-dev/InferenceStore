@@ -2,7 +2,7 @@
 
 Labels: `area/samples`, `platform/android`, `platform/ios`, `type/feature`, `priority/p2`  
 Milestone: `M3 Mobile proof`  
-Dependencies: #16, #23, #24
+Dependencies: #16, #24
 
 ## Problem
 
@@ -22,4 +22,4 @@ Build a minimal Android/iOS sample using common inference code and platform-spec
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

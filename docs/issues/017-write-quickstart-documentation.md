@@ -2,7 +2,7 @@
 
 Labels: `area/docs`, `type/docs`, `priority/p1`  
 Milestone: `M2 Alpha`  
-Dependencies: #15, #16
+Dependencies: #15, #16, #38
 
 ## Problem
 
@@ -15,11 +15,12 @@ Create Quickstart with dependency setup, fake provider, OpenAI-compatible provid
 ## Acceptance criteria
 
 - [ ] Quickstart includes Gradle version catalog and Kotlin DSL examples.
-- [ ] Quickstart shows local-first/cloud-fallback.
+- [ ] Quickstart shows local-first/cloud-fallback with fake providers.
+- [ ] Quickstart shows optional LiteRT-LM model-path setup.
 - [ ] Quickstart shows route trace.
 - [ ] Quickstart shows privacy local-only test.
 - [ ] All code snippets compile in sample/test.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

@@ -1,6 +1,6 @@
 # Strategy
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Executive summary
 
@@ -143,7 +143,7 @@ offline-first AI architecture
    Inference is interactive. Token streaming and route state changes are first-class.
 
 3. **Privacy policy as API**  
-   A request must declare whether cloud is allowed, what can be logged, and whether cache persistence is allowed.
+   A request carries the canonical `PrivacyPolicy`: privacy class, cloud permission, persistence permission, telemetry permission, and provider-boundary requirements. The execution controller enforces this before provider invocation.
 
 4. **Observable by default**  
    Every result should include route, provider, model, latency, fallback reason, and validator outcome.
@@ -202,8 +202,9 @@ Deliver:
 - architecture doc
 - sample API
 - user interview script
-- fake provider demo
+- static/scripted fake-provider demo traces
 - comparison page
+- first real local adapter decision
 
 Goal:
 - validate whether teams want policy + fallback + observability, not just local inference.
@@ -214,24 +215,25 @@ Deliver:
 - common API
 - fake/test provider
 - OpenAI-compatible adapter
-- local dummy provider
+- LiteRT-LM Android/JVM local adapter
 - local-first/cloud-fallback policy
 - schema validation
 - route telemetry
+- privacy/error/timeout contracts
 
 Goal:
 - make the first demo feel inevitable.
 
-### Phase 2: Real mobile adapters
+### Phase 2: Alpha and mobile proof
 
 Deliver:
-- Android adapter path
-- Apple adapter path
-- one KMP runtime adapter
-- sample app
+- sample app with fake and LiteRT-LM modes
+- adapter authoring guide
+- iOS adapter decision/prototype
+- Firebase/Apple adapter exploration
 
 Goal:
-- prove KMP value and device-aware routing.
+- prove KMP value and device-aware routing without pretending all local adapters are equivalent.
 
 ### Phase 3: Production hardening
 
@@ -283,7 +285,7 @@ Adapters will break as runtimes evolve. Mitigation: keep adapters optional and u
 
 ### Risk: inference caching is misunderstood
 
-Naive response caching is dangerous. Mitigation: use explicit fingerprints, model versions, template versions, privacy classes, and validator rules.
+Naive response caching is dangerous. Mitigation: use explicit fingerprints, model versions, template versions, privacy class, privacy policy version, and validator rules.
 
 ### Risk: scope explosion
 
@@ -297,6 +299,6 @@ Inference is nondeterministic and capability-dependent. Mitigation: document dif
 
 Proceed, but with a narrow wedge:
 
-> InferenceStore Core: KMP streaming inference router with provider capabilities, local/cloud policy, fallback reasons, structured-output validation, route telemetry, and deterministic tests.
+> InferenceStore Core: KMP streaming inference router with provider capabilities, canonical privacy enforcement, local/cloud policy, fallback reasons, structured-output validation, route telemetry, deterministic tests, and one real local adapter.
 
 Do not build a general model runtime. Do not begin with semantic cache. Do not begin with model download orchestration. Make the orchestration semantics compelling first.

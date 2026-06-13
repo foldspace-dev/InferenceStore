@@ -22,4 +22,4 @@ Set up docs site skeleton with sections for get started, concepts, guides, adapt
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

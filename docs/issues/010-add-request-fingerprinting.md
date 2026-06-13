@@ -14,11 +14,11 @@ Implement `InferenceFingerprint` and default fingerprinting strategy with extens
 
 ## Acceptance criteria
 
-- [ ] Fingerprint includes key, input hash, prompt version, output version, privacy class, and policy version if present.
+- [ ] Fingerprint includes key, input hash, prompt version, output version, privacy class, privacy policy version, and policy version if present.
 - [ ] Raw input is not stored in the fingerprint.
-- [ ] Tests cover prompt/input/privacy changes.
+- [ ] Tests cover prompt/input/privacy/policy changes.
 - [ ] Docs warn about user/account scoping.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

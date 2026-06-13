@@ -1,7 +1,7 @@
 # ADR-0004: Privacy policy as API
 
 Status: Accepted  
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Context
 
@@ -9,7 +9,7 @@ Inference requests may contain sensitive user data. Local/cloud routing is a pri
 
 ## Decision
 
-Every request carries a `PrivacyPolicy` with safe defaults. The execution controller enforces privacy before provider invocation.
+Every request carries a `PrivacyPolicy` with safe defaults. `docs/technical/privacy-model.md` is the single source of truth. The execution controller enforces privacy before provider invocation and before provider-level fallback.
 
 ## Consequences
 
@@ -24,3 +24,4 @@ Negative:
 
 - more upfront API complexity
 - developers must understand privacy profiles
+- quickstarts must make privacy explicit

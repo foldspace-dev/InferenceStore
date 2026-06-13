@@ -1,6 +1,6 @@
 # Competitive landscape
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Summary
 
@@ -80,7 +80,7 @@ Mitigation:
 - ship a sample app early
 - provide OpenAI-compatible adapter
 - provide fake/test provider
-- choose one real local adapter after validation
+- ship one real local adapter in MVP: LiteRT-LM Android/JVM
 - keep API small
 
 ## Strategic opportunity
@@ -101,3 +101,14 @@ schema-validate and repair for extraction
 ```
 
 That is the product.
+
+
+## Alpha differentiation requirement
+
+The alpha should not look like a Cactus/Firebase clone. It must demonstrate at least three things beyond simple local-first fallback:
+
+1. `PrivacyPolicy` rejects cloud providers before invocation and tests prove zero cloud calls.
+2. Final-output validation can trigger cloud repair with a canonical trace.
+3. Request fingerprinting includes prompt/output/privacy/policy versions so cache and dedupe behavior is principled.
+
+The LiteRT-LM MVP adapter makes the runtime boundary concrete while keeping InferenceStore's differentiation in orchestration.

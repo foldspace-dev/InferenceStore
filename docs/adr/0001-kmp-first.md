@@ -1,7 +1,7 @@
 # ADR-0001: KMP-first core
 
 Status: Accepted  
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Context
 

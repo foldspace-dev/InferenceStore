@@ -22,4 +22,4 @@ Implement `MemoryInferenceCache` with TTL and clear APIs.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

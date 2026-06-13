@@ -1,6 +1,6 @@
 # One-pager: InferenceStore
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Working name
 
@@ -45,14 +45,14 @@ You maintain Store, which gives this project the right mental model for source-o
 
 ## MVP
 
-The MVP should prove four flows:
+The M0 validation demo should prove four flows with scripted/fake traces, and the MVP implementation should repeat them with one real local adapter where possible:
 
 1. Local provider succeeds.
 2. Local unavailable falls back to cloud.
 3. Local output fails validation and cloud repairs it.
 4. Privacy policy blocks cloud fallback.
 
-No real model runtime is required for the first validation demo.
+No real model runtime is required for the first validation demo. The MVP implementation must include LiteRT-LM Android/JVM so local-runtime behavior is exercised before the architecture locks.
 
 ## Initial modules
 
@@ -60,6 +60,8 @@ No real model runtime is required for the first validation demo.
 inferencestore-core
 inferencestore-testkit
 inferencestore-provider-openai-compatible
+inferencestore-provider-litertlm-android
+inferencestore-provider-litertlm-jvm
 samples/notes-summary
 ```
 
@@ -69,7 +71,6 @@ samples/notes-summary
 inferencestore-provider-firebase-android
 inferencestore-provider-apple-foundationmodels-ios
 inferencestore-provider-llamatik
-inferencestore-provider-litertlm
 inferencestore-store-sqldelight
 inferencestore-meeseeks
 ```

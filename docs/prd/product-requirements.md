@@ -1,21 +1,41 @@
 # Product Requirements Document: InferenceStore
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Product summary
 
-InferenceStore is a Kotlin Multiplatform library that orchestrates inference across local and cloud providers using explicit policies. It provides a Store-like architecture for AI features: provider abstraction, routing, fallback, validation, caching hooks, deduplication, observability, and deterministic tests.
+InferenceStore is a Kotlin Multiplatform library that orchestrates inference across local and cloud providers using explicit, testable policy. It sits above on-device runtimes and cloud APIs, and owns routing, fallback, validation, caching hooks, deduplication, observability, and later background model lifecycle.
+
+Tagline:
+
+> local when possible, cloud when necessary, observable always.
+
+## Corrections incorporated
+
+This PRD has been reconciled with the RFCs, ADRs, and technical specs.
+
+Decided items:
+
+- **Core API shape:** request-first, `InferenceRequest<Output>`, not `InferenceStore<Key, Output>` generics at the root.
+- **Key requirement:** `InferenceKey` is required for cache, dedupe, artifacts, and durable traces. Convenience APIs may generate ephemeral keys only when cache and dedupe are disabled.
+- **Validation timing:** MVP validates final outputs only. Partial validation is post-MVP.
+- **Privacy source of truth:** `docs/technical/privacy-model.md` owns classes, defaults, and enforcement rules.
+- **Built-in policy count:** five MVP presets: `localOnly`, `cloudOnly`, `preferLocalThenCloud`, `preferCloudThenLocal`, `validateLocalThenCloudRepair`.
+- **Event taxonomy:** `docs/technical/event-model.md` is canonical.
+- **First real local adapter:** LiteRT-LM Android/JVM is in the MVP vertical slice.
+- **Meeseeks milestone:** Meeseeks lifecycle is M5, not M4.
+- **Validation gate:** M1 build work is gated by the 8/15 discovery signal in issue #037 unless manually waived and documented.
 
 ## Problem
 
 AI-powered mobile apps increasingly need to combine local and cloud inference:
 
-- Local inference is useful for privacy, offline use, latency, and cost.
+- Local inference is useful for privacy, offline use, latency, and marginal cost.
 - Cloud inference is useful for quality, larger models, broad device coverage, multimodal support, long context, and tool calling.
 - Device support and local model availability vary.
 - Provider and runtime APIs differ across iOS, Android, JVM, JS, and backend.
-- Feature teams often reimplement the same routing, fallback, retry, validation, and telemetry logic.
-- Tests become brittle because real model calls are nondeterministic and expensive.
+- Feature teams reimplement routing, fallback, retry, validation, caching, privacy gates, and telemetry.
+- Tests become brittle because real model calls are nondeterministic, expensive, and environment-dependent.
 
 There is no broadly adopted KMP library that plays the role Store plays for data access, but for inference orchestration.
 
@@ -27,54 +47,58 @@ Developers can make inference requests from common KMP code without hard-coding 
 
 ### G2: Explicit routing policies
 
-Developers can express local/cloud behavior as policy:
+Developers can express local/cloud behavior as policy using five MVP presets and later a DSL:
 
-- local-only
-- cloud-only
-- prefer-local
-- prefer-cloud
-- local-first with cloud fallback
-- cloud-first with local fallback
-- privacy-sensitive local-only
-- validate-local then repair-with-cloud
+- `localOnly`
+- `cloudOnly`
+- `preferLocalThenCloud`
+- `preferCloudThenLocal`
+- `validateLocalThenCloudRepair`
+
+Privacy is not a separate routing preset. Privacy is enforced by `PrivacyPolicy` before provider invocation.
 
 ### G3: Provider capability and availability model
 
-Providers report whether they are available and whether they support a request.
+Providers report availability, capabilities, model/runtime metadata, execution boundary, and stable error categories.
 
 ### G4: Streaming-first results
 
-The API supports streaming tokens/events and non-streaming convenience methods.
+The API supports streaming events and non-streaming convenience methods.
 
 ### G5: Validation and repair
 
-Structured output and custom validators can trigger fallback or repair.
+Final-output validators can trigger fallback or repair in MVP. Partial validation is post-MVP.
 
 ### G6: Route observability
 
-Every request can emit route decisions, provider/model metadata, fallback reasons, timings, and validator outcomes.
+Every request can emit route decisions, provider/model metadata, fallback reasons, timings, validator outcomes, timeout/retry decisions, and privacy denials in a redacted route trace.
 
 ### G7: Deterministic testkit
 
-Developers can unit test route behavior, fallback behavior, streaming behavior, and validator behavior without real models.
+Developers can unit test route behavior, fallback behavior, streaming behavior, validation behavior, privacy behavior, timeout behavior, and cancellation behavior without real models.
 
 ### G8: Extensible adapters
 
-Adapters can be added without changing the core API.
+Adapters can be added without changing the core API. The core does not become a model runtime.
+
+### G9: Real local runtime proof in MVP
+
+The MVP must include one real local adapter to exercise model availability, initialization, streaming, cancellation, timeout, and error mapping. The selected adapter is LiteRT-LM for Android/JVM.
 
 ## Non-goals
 
 For MVP, InferenceStore will not:
 
-- implement a new inference runtime
-- train, fine-tune, quantize, or compile models
-- manage model downloads in the core module
-- provide a hosted SaaS dashboard
-- guarantee output quality
-- provide universal semantic caching
-- support every modality
-- hide all provider capability differences
-- promise identical results across local and cloud models
+- implement a new inference runtime;
+- train, fine-tune, quantize, or compile models;
+- manage model downloads in the core module;
+- provide a hosted SaaS dashboard;
+- guarantee output quality;
+- provide universal semantic caching;
+- support every modality;
+- hide all provider capability differences;
+- promise identical results across local and cloud models;
+- implement iOS local adapter parity before the Android/JVM LiteRT-LM slice is validated.
 
 ## Personas
 
@@ -88,7 +112,7 @@ Needs centralized AI policy, privacy boundaries, observability, and testing.
 
 ### Feature engineer
 
-Needs simple calls, structured output, and reliable fallback without learning every provider API.
+Needs simple calls, structured output, reliable fallback, and readable route traces without learning every provider API.
 
 ### Runtime maintainer
 
@@ -98,11 +122,11 @@ Needs a clean adapter contract so their runtime can be adopted by app teams.
 
 ### UC1: Private note summarization
 
-A note-taking app summarizes notes locally when available. Cloud fallback is allowed only if the note is not marked private. The app records which path was used.
+A note-taking app summarizes notes locally when available. Cloud fallback is allowed only if the note is not marked private and the request privacy policy explicitly permits an approved cloud provider. The app records which path was used.
 
 ### UC2: Structured extraction
 
-An app extracts tasks from a user message into JSON. Local model output must satisfy schema. If schema validation fails, the request falls back to a stronger cloud model.
+An app extracts tasks from a user message into JSON. Local output must satisfy schema. If final validation fails, the request falls back to a stronger cloud model when privacy allows.
 
 ### UC3: Offline assistant
 
@@ -114,11 +138,11 @@ Routine classification tasks use a small local model. Cloud is used only when lo
 
 ### UC5: Enterprise policy
 
-An enterprise app forbids cloud inference for some data classes. The policy engine enforces this before any provider call.
+An enterprise app forbids cloud inference for certain privacy classes. The execution controller enforces this before any provider call, independent of routing policy bugs.
 
 ### UC6: Background precomputation
 
-A read-it-later app schedules embeddings/summaries when the device is charging and on Wi-Fi, using Meeseeks.
+A read-it-later app schedules embeddings or summaries when the device is charging and on Wi-Fi, using Meeseeks in a post-MVP lifecycle module.
 
 ## Functional requirements
 
@@ -126,135 +150,157 @@ A read-it-later app schedules embeddings/summaries when the device is charging a
 
 The library must define a common request model that supports:
 
-- text input
-- message input
-- optional attachments placeholder
-- output type metadata
-- prompt/template version
-- privacy classification
-- cache policy
-- route policy override
-- timeout
-- metadata
+- `InferenceKey`;
+- text input;
+- message input;
+- optional attachments placeholder for post-MVP multimodal input;
+- output type metadata;
+- prompt/template version;
+- `PrivacyPolicy` from the canonical privacy model;
+- cache policy;
+- route policy override;
+- timeout policy;
+- retry policy;
+- metadata.
 
 ### FR2: Provider interface
 
 The library must define a provider interface with:
 
-- provider ID
-- provider kind: local, cloud, platform, remote, test
-- availability check
-- capability check
-- streaming generation
-- optional token/cost estimates
-- model metadata
+- provider ID;
+- provider kind: local, cloud, platform, remote, test;
+- provider privacy boundary;
+- availability check;
+- capability check;
+- streaming generation;
+- optional token/cost estimates;
+- model/runtime metadata;
+- stable error mapping.
 
 ### FR3: Policy engine
 
 The library must choose a route using:
 
-- request policy
-- provider availability
-- provider capabilities
-- connectivity
-- privacy rules
-- cost budget
-- latency budget
-- quality rules
-- previous failures if configured
+- request policy;
+- provider availability;
+- provider capabilities;
+- connectivity;
+- privacy rules;
+- cost budget;
+- latency budget;
+- timeout budget;
+- quality/validation rules;
+- previous failures if configured.
 
 ### FR4: Streaming event model
 
-The library must emit:
+The library must emit the canonical lifecycle from `docs/technical/event-model.md`.
 
-- loading / route planning
-- provider selected
-- route changed
-- token
-- partial structured output
-- validator result
-- fallback
-- done
-- error
+MVP public stream events:
+
+- started;
+- cache checked;
+- providers evaluated;
+- route selected;
+- provider attempt started;
+- token;
+- partial;
+- validation completed;
+- provider attempt completed;
+- fallback started;
+- artifact stored;
+- done;
+- failed.
 
 ### FR5: Fallback
 
-The library must support fallback on:
+The library must support fallback according to `docs/technical/error-fallback-mapping.md`.
 
-- provider unavailable
-- unsupported capability
-- timeout
-- transient error
-- rate limit
-- validator failure
-- policy-defined failure
+MVP fallback triggers:
+
+- provider unavailable;
+- unsupported capability;
+- attempt timeout;
+- transient error;
+- rate limit when route policy allows;
+- parser failure;
+- validator failure;
+- policy-defined failure.
+
+Privacy violations are not a cloud fallback trigger; they are a gate that may reject individual providers before invocation.
 
 ### FR6: Validation
 
 The library must support:
 
-- predicate validator
-- JSON/schema validator
-- custom evaluator hook
-- validation result metadata
-- fallback/repair trigger
+- predicate validator;
+- JSON/schema validator design;
+- validation result metadata;
+- validation-triggered fallback/repair.
+
+MVP validation timing is final-output only.
 
 ### FR7: Cache hooks
 
 The library must expose interfaces for:
 
-- in-memory output cache
-- persistent artifact store
-- prompt/request fingerprinting
-- cache validity checks
-- cache skip/refresh policy
+- in-memory output cache;
+- persistent artifact store;
+- prompt/request fingerprinting;
+- cache validity checks;
+- cache skip/refresh policy.
+
+Persistence must require both cache-policy permission and privacy-policy permission.
 
 ### FR8: Dedupe
 
-The library must coalesce concurrent equivalent requests when the request and policy allow sharing.
+The library must coalesce concurrent equivalent requests when request, policy, output spec, and privacy settings allow sharing. MVP fan-out semantics are defined in `docs/technical/threading-dispatchers.md`.
 
 ### FR9: Observability
 
-The library must expose monitor hooks for:
-
-- request started
-- route evaluated
-- provider selected
-- token emitted
-- fallback triggered
-- validation completed
-- request completed
-- request failed
+The library must expose redacted monitor hooks derived from the canonical event lifecycle.
 
 ### FR10: Testkit
 
 The library must provide:
 
-- fake providers
-- scripted provider responses
-- failure injection
-- virtual clock support
-- route assertion helpers
-- streaming assertion helpers
+- fake providers;
+- scripted provider responses;
+- failure injection for every stable error category;
+- virtual clock support;
+- route assertion helpers;
+- streaming assertion helpers;
+- privacy denial assertions;
+- timeout and cancellation assertions;
+- dedupe fan-out assertions.
 
-### FR11: Optional adapters
+### FR11: MVP adapters
 
-Initial adapters should include:
+Initial adapters include:
 
-- OpenAI-compatible HTTP adapter
-- fake local adapter
-- one local runtime/platform adapter after validation
+- fake/test providers;
+- OpenAI-compatible HTTP cloud adapter;
+- LiteRT-LM Android/JVM local adapter.
+
+Optional/post-MVP adapter candidates:
+
+- Apple Foundation Models iOS;
+- Firebase AI Logic Android/iOS;
+- Cactus;
+- Llamatik;
+- MLC LLM;
+- ExecuTorch-backed adapter.
 
 ### FR12: Meeseeks integration
 
-Post-MVP module should include background tasks for:
+M5 module should include background tasks for:
 
-- model availability check
-- download
-- warmup
-- prune
-- telemetry upload
-- deferred retry
+- model availability check;
+- download orchestration hook;
+- warmup;
+- prune;
+- telemetry upload;
+- deferred retry.
 
 ## Non-functional requirements
 
@@ -266,35 +312,39 @@ Core must compile in commonMain. Platform-specific dependencies belong in adapte
 
 The core API should use Kotlin coroutines and Flow.
 
-### NFR3: Small core dependency graph
+### NFR3: Main-safe streaming
+
+`stream()` must be safe to call and collect from UI scopes if adapters obey the threading contract. Blocking local runtime work must run off the UI dispatcher.
+
+### NFR4: Small core dependency graph
 
 Core should depend on Kotlin stdlib, coroutines, serialization where necessary, and small internal utilities only.
 
-### NFR4: Stable semantics
+### NFR5: Stable semantics
 
-Route decisions and event sequences must be documented and testable.
+Route decisions, event sequences, timeout behavior, error mapping, privacy enforcement, and dedupe fan-out must be documented and testable.
 
-### NFR5: Privacy-safe defaults
+### NFR6: Privacy-safe defaults
 
-Prompts and outputs must not be logged by default. Cache persistence must be opt-in for sensitive requests.
+Default privacy is `Personal` with cloud denied, no prompt/output persistence, and metadata-only telemetry. Raw prompts and outputs must not be logged by default.
 
-### NFR6: Cancellation-safe
+### NFR7: Cancellation-safe
 
-Cancellation must propagate to provider calls where supported.
+Cancellation must propagate to provider calls where supported. Cancellation is terminal and must not trigger fallback.
 
-### NFR7: Backpressure-aware
+### NFR8: Backpressure-aware
 
 Streaming should respect Flow backpressure semantics.
 
-### NFR8: Extensible error model
+### NFR9: Extensible error model
 
-Provider errors must preserve raw cause while mapping to stable fallback categories.
+Provider errors must preserve raw cause internally while mapping to stable fallback categories.
 
 ## User experience
 
 ### Quickstart target
 
-A developer should be able to write this in under 10 minutes:
+A developer should be able to write this in under 10 minutes with fake providers or an OpenAI-compatible provider:
 
 ```kotlin
 val inferenceStore = InferenceStore.build {
@@ -307,107 +357,107 @@ val inferenceStore = InferenceStore.build {
 
 val summary = inferenceStore.generateText(
     key = InferenceKey("summary", note.id),
-    input = note.body
+    input = note.body,
+    privacy = PrivacyPolicy.personal(
+        cloud = CloudPermission.ApprovedProviders(setOf(ProviderId("openai-compatible")))
+    )
 )
 ```
 
-### Advanced target
+### Real-local demo target
 
-A platform team should be able to configure:
+A developer can swap the fake provider for LiteRT-LM when a local model path is available:
 
 ```kotlin
-val policy = policy {
-    require {
-        privacyAllowsCloud()
-    }
-
-    route {
-        prefer(Local) whenAll {
-            capability(TextGeneration)
-            availability(Available)
-            estimatedLatencyBelow(2.seconds)
-        }
-
-        fallback(Cloud) whenAny {
-            unsupported(Capability.StructuredOutput)
-            validationFailed()
-            timedOut()
-        }
-    }
-
-    observe {
-        redactPrompts()
-        emitFallbackReasons()
-        emitCostEstimate()
-    }
+providers {
+    register(
+        LiteRtLmProvider(
+            LiteRtLmProviderConfig(
+                modelPath = System.getenv("INFERENCESTORE_LITERTLM_MODEL_PATH"),
+                modelId = "gemma-local-demo"
+            )
+        )
+    )
+    register(OpenAICompatibleProvider(config))
 }
 ```
 
 ## MVP acceptance criteria
 
-1. Core compiles for JVM, Android, iOS targets in CI.
-2. Fake provider and OpenAI-compatible provider work.
-3. `preferLocalThenCloud` policy works.
-4. Streaming and non-streaming APIs work.
-5. Fallback reason is captured and exposed.
-6. Predicate validator works.
-7. JSON/schema validator design is accepted, even if implementation is minimal.
-8. Request dedupe works for identical concurrent requests.
-9. Testkit supports deterministic route assertions.
-10. Quickstart and sample app are documented.
+1. M0 validation gate is recorded: at least 8 of 15 target interviews say they would try the library, or the maintainer documents a waiver.
+2. Core compiles for JVM, Android, and iOS targets in CI.
+3. Fake provider and testkit work.
+4. OpenAI-compatible provider works.
+5. LiteRT-LM Android/JVM local adapter works for text-generation streaming when a model path is supplied.
+6. `preferLocalThenCloud` policy works with fake local and with LiteRT-LM local.
+7. Streaming and non-streaming APIs work.
+8. Fallback reason is captured and exposed.
+9. Predicate validator works.
+10. JSON/schema validator design is accepted, even if implementation is minimal.
+11. Request dedupe semantics are implemented as defined in the threading contract.
+12. Privacy model tests prove denied providers are not invoked.
+13. Timeout/retry behavior follows the timeout contract.
+14. Error-to-fallback mapping tests cover all stable categories.
+15. Quickstart and sample app are documented.
 
 ## Out-of-scope until post-MVP
 
-- semantic cache
-- model downloads
-- multimodal attachments
-- tool calling
-- prompt registry
-- remote policy control plane
-- enterprise compliance package
-- UI components
-- benchmarking dashboard
+- semantic cache;
+- model downloads;
+- multimodal attachments;
+- tool calling;
+- prompt registry;
+- remote policy control plane;
+- enterprise compliance package;
+- UI components;
+- benchmarking dashboard;
+- iOS local adapter parity.
 
 ## Dependencies
 
 Potential dependencies:
 
-- Kotlin coroutines
-- Kotlinx serialization
-- Ktor client for HTTP adapter
-- SQLDelight for persistent artifact store, if implemented
-- Meeseeks for model lifecycle module
-- Platform/runtime adapter dependencies as optional modules
+- Kotlin coroutines;
+- Kotlinx serialization;
+- Ktor client for HTTP adapter;
+- LiteRT-LM Android/JVM dependency in optional adapter module;
+- SQLDelight for persistent artifact store, if implemented;
+- Meeseeks for model lifecycle module;
+- platform/runtime adapter dependencies as optional modules.
 
 ## Milestones
 
 ### M0: Validation
 
-Docs, API sketch, test fake, user interviews.
+Docs, API sketch, static/scripted demo traces, competitive comparison, user interviews, and first adapter decision.
 
-### M1: Core alpha
+Exit gate: proceed to M1 only if 8 of 15 interviews say they would try the library, or if the maintainer explicitly records a waiver.
 
-KMP core, fake providers, OpenAI-compatible adapter, simple policy, streaming events, validators, testkit.
+### M1: Core prototype
 
-### M2: Mobile proof
+KMP core, fake providers, policy presets, streaming events, validators, testkit, privacy enforcement, timeout/error contracts, OpenAI-compatible adapter, and LiteRT-LM Android/JVM adapter.
 
-Android + iOS sample, one local/platform adapter, route telemetry.
+### M2: Alpha
 
-### M3: Production hardening
+Docs quickstart, sample app, route monitor, in-memory cache, request dedupe, CI/publishing snapshots, security/privacy guide.
 
-Dedupe, cache hooks, artifact store, observability exporters, release automation.
+### M3: Mobile proof
 
-### M4: Lifecycle
+Android + iOS sample, iOS local adapter decision/prototype, Firebase/Apple adapter exploration, adapter guide.
 
-Meeseeks integration for downloads, warmup, pruning, and telemetry.
+### M4: Production hardening
+
+Artifact store, route journal, OpenTelemetry exporter, privacy recipes, cancellation hardening, binary compatibility setup.
+
+### M5: Lifecycle
+
+Meeseeks integration for downloads, warmup, pruning, provider inventory, deferred retries, and telemetry upload.
 
 ## Open questions
 
-1. Should the public API use `InferenceStore<Key, Output>` generics like Store, or a more dynamic `InferenceRequest<Output>` shape?
-2. Should validation operate on streamed partials or only final outputs in MVP?
-3. How strongly should policy DSL be typed in v0?
-4. Which local adapter should come first?
-5. Should `ArtifactStore` be in MVP or RFC-only?
-6. Should the library expose token accounting in core despite provider inconsistency?
-7. How should provider capability versions be represented?
-8. What privacy classes are built-in vs user-defined?
+1. Which iOS local adapter should come first: Apple Foundation Models, LiteRT-LM Swift, Firebase AI Logic, or Cactus/Llamatik?
+2. Should `ArtifactStore` ship in alpha or remain interface-only until production hardening?
+3. Should token accounting live in core despite provider inconsistency?
+4. How should provider capability versions be represented?
+5. Should policy DSL ship before beta, or should presets and plain functions carry alpha?
+6. Should storage adapters provide encryption recipes or first-party encryption hooks?

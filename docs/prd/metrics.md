@@ -1,6 +1,6 @@
 # Metrics
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Product metrics
 
@@ -66,6 +66,12 @@ Every request should be able to emit:
 
 ## MVP success metrics
 
+Before M1 build starts:
+
+- 15 discovery interviews completed
+- 8+ interviewees say they would try it, or maintainer waiver recorded
+- first local adapter decision recorded
+
 Within 30 days of public alpha:
 
 - 100+ GitHub stars or equivalent signal from Store/KMP audience
@@ -73,10 +79,11 @@ Within 30 days of public alpha:
 - 3+ external developers trying the sample
 - 2+ people asking for a specific adapter
 - 1+ non-maintainer PR
+- 1 real local adapter included in the alpha/MVP, or a documented blocker explains why it was disabled
 
 Within 90 days:
 
-- 1 real local adapter
+- second adapter decision or prototype
 - 1 production-minded team evaluating
 - 3+ custom policies from users
 - 3+ custom validators from users

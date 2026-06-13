@@ -2,7 +2,7 @@
 
 Labels: `area/testkit`, `type/feature`, `priority/p0`  
 Milestone: `M1 Core prototype`  
-Dependencies: #3, #5
+Dependencies: #3, #5, #37
 
 ## Problem
 
@@ -14,12 +14,12 @@ Implement `FakeInferenceProvider`, scripted responses, failure injection, stream
 
 ## Acceptance criteria
 
-- [ ] Fake provider can stream tokens.
-- [ ] Fake provider can be unavailable.
-- [ ] Fake provider can fail with stable error categories.
-- [ ] Assertions support attempted/fellBackTo/completedWith/didNotAttempt.
-- [ ] Examples in docs compile.
+- [ ] Fake providers support scripted tokens, completion, delays, cancellation, and every stable error category.
+- [ ] Route assertions cover attempted/fellBackTo/completedWith/rejected/didNotAttempt.
+- [ ] Virtual clock supports timeouts/retries.
+- [ ] Privacy assertions prove provider invocation count is zero when denied.
+- [ ] Dedupe fan-out assertions are available.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

@@ -1,6 +1,6 @@
 # Security and privacy
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Principle
 
@@ -8,164 +8,126 @@ Privacy must be a type-level concern, not a README warning.
 
 Inference requests often contain personal, sensitive, or proprietary data. The library must make it hard to accidentally route sensitive prompts to cloud providers, logs, caches, or telemetry.
 
+## Normative source
+
+`docs/technical/privacy-model.md` is the source of truth for privacy classes, cloud permission, persistence defaults, telemetry defaults, provider boundary metadata, and enforcement behavior.
+
+This file explains the security posture and checklist around that model.
+
 ## Privacy policy model
+
+Canonical shape:
 
 ```kotlin
 data class PrivacyPolicy(
-    val classification: PrivacyClassification,
+    val classification: PrivacyClass,
     val cloud: CloudPermission,
     val persistence: PersistencePermission,
     val telemetry: TelemetryPermission,
-    val redaction: RedactionPolicy = RedactionPolicy.Default
+    val redaction: RedactionPolicy = RedactionPolicy.Default,
+    val providerBoundary: ProviderBoundaryRequirement = ProviderBoundaryRequirement.Default
 )
 ```
 
-## Classification
+Built-in classes:
 
-```kotlin
-sealed interface PrivacyClassification {
-    data object Public : PrivacyClassification
-    data object Internal : PrivacyClassification
-    data object Personal : PrivacyClassification
-    data object Sensitive : PrivacyClassification
-    data object LocalOnly : PrivacyClassification
-    data class Custom(val value: String) : PrivacyClassification
-}
-```
+- `Public`
+- `Internal`
+- `Personal`
+- `Sensitive`
+- `LocalOnly`
+- `Custom(value)`
 
-## Cloud permission
+`AllowsCloud` is not a class. Cloud behavior is controlled by `CloudPermission`.
 
-```kotlin
-sealed interface CloudPermission {
-    data object Allowed : CloudPermission
-    data object Denied : CloudPermission
-    data class AllowedProviders(val providers: Set<ProviderId>) : CloudPermission
-}
-```
+## Default posture
 
-## Persistence permission
+`PrivacyPolicy.Default` is strict:
 
-```kotlin
-data class PersistencePermission(
-    val persistPrompt: Boolean = false,
-    val persistOutput: Boolean = false,
-    val persistTrace: Boolean = true,
-    val persistTraceContent: Boolean = false
-)
-```
+- class: `Personal`;
+- cloud: denied;
+- prompt persistence: false;
+- output persistence: false;
+- trace persistence: redacted only;
+- telemetry: metadata/hash only.
 
-## Telemetry permission
+Demos may use `PrivacyPolicy.publicData()` for harmless prompts. Production examples should set privacy explicitly.
 
-```kotlin
-data class TelemetryPermission(
-    val emitMetrics: Boolean = true,
-    val emitPrompt: Boolean = false,
-    val emitOutput: Boolean = false,
-    val emitHashes: Boolean = true
-)
-```
-
-## Default privacy profiles
-
-### Public
-
-- cloud allowed
-- output persistence allowed if cache policy allows
-- prompt persistence opt-in
-- metrics allowed
-
-### Personal
-
-- cloud allowed only through approved providers
-- prompt persistence false
-- output persistence opt-in
-- redacted telemetry
-
-### Sensitive
-
-- cloud denied by default
-- prompt persistence false
-- output persistence false by default
-- trace hash-only
-
-### LocalOnly
-
-- cloud denied
-- remote providers denied
-- prompt persistence false
-- telemetry hash-only
-- result cache opt-in
-
-## Policy enforcement
+## Enforcement
 
 The execution controller must enforce privacy before provider invocation.
 
 Provider adapters should not be trusted to enforce privacy.
 
 ```kotlin
-if (!privacy.allows(provider)) {
-    return PolicyViolation.CloudNotAllowed
+val decision = request.privacy.allowsProvider(provider.metadata)
+if (decision is PrivacyDecision.Deny) {
+    trace.recordProviderRejected(provider.id, decision.reason)
+    return decision.reason
 }
 ```
+
+Denied providers are not invoked, not warmed up with request content, and not allowed to inspect prompts.
 
 ## Logging
 
 Default:
 
-- no raw prompts
-- no raw outputs
-- no headers/secrets
-- provider/model IDs allowed
-- request IDs allowed
-- fingerprints allowed
-- route reasons allowed
+- no raw prompts;
+- no raw outputs;
+- no headers/secrets;
+- provider/model IDs allowed;
+- request IDs allowed;
+- fingerprints allowed;
+- route reasons allowed;
+- error categories allowed.
 
-Debug logging with raw content must require explicit opt-in.
+Debug logging with raw content must require explicit opt-in and should be impossible to enable accidentally through generic log-level changes.
 
 ## Secrets
 
 Provider adapters must:
 
-- accept API keys through configuration
-- avoid storing keys in route traces
-- avoid exposing keys in errors
-- support app-specific secure storage patterns
-- document platform-specific requirements
+- accept API keys through configuration or app-provided token providers;
+- avoid storing keys in route traces;
+- avoid exposing keys in errors;
+- support app-specific secure storage patterns;
+- document platform-specific requirements;
+- recommend backend token brokering for public mobile clients when appropriate.
+
+Core should not invent universal Keychain/Keystore abstractions in MVP. Adapter docs should include recipes.
 
 ## Cloud boundary
 
-A provider should declare:
+Every provider declares a `ProviderPrivacyBoundary`. This is metadata, not a legal guarantee, but it is required for routing and auditability.
 
-```kotlin
-data class ProviderPrivacyBoundary(
-    val local: Boolean,
-    val cloud: Boolean,
-    val vendor: String?,
-    val dataRetention: DataRetention?,
-    val trainingUse: TrainingUse?,
-    val region: String?
-)
-```
+Examples:
 
-This is metadata, not a legal guarantee.
+- LiteRT-LM local adapter: `LocalProcess`.
+- Apple on-device model: `PlatformOnDevice`.
+- Firebase hybrid convenience provider: `PlatformHybrid`.
+- OpenAI-compatible cloud adapter: `ThirdPartyCloud` unless configured as an app-local server.
+- App backend proxy: `AppBackend`.
 
-## User consent
+## User consent and UX
 
 The library should expose enough metadata for apps to build UX such as:
 
 - “This answer was generated on-device.”
 - “Cloud was used because the on-device model was unavailable.”
 - “Private notes never leave this device.”
+- “Cloud fallback was blocked by privacy settings.”
 
 ## Deletion
 
 Storage interfaces must support:
 
-- delete by key
-- delete by fingerprint
-- delete all
-- delete by privacy class if implemented
-- artifact pruning
+- delete by key;
+- delete by fingerprint;
+- delete all;
+- delete by privacy class if implemented;
+- artifact pruning;
+- route trace pruning.
 
 ## Threat model
 
@@ -173,38 +135,51 @@ Storage interfaces must support:
 
 Mitigation:
 
-- request privacy policy
-- policy guardrail
-- tests that assert provider not called
+- request privacy policy;
+- execution-controller privacy gate;
+- tests that assert provider not called;
+- route trace rejected-provider records.
 
 ### Prompt leakage through logs
 
 Mitigation:
 
-- redacted monitor events
-- no raw content in errors by default
+- redacted monitor events;
+- no raw content in errors by default;
+- secret redaction in adapters.
 
 ### Persistent sensitive output
 
 Mitigation:
 
-- persistence permissions
-- cache write opt-in
-- storage redaction
+- persistence permissions;
+- cache write opt-in;
+- storage redaction;
+- fingerprint invalidation on privacy changes.
 
 ### Provider metadata confusion
 
 Mitigation:
 
-- provider kind and privacy boundary required
-- route trace shows provider used
+- provider kind and privacy boundary required;
+- route trace shows provider used;
+- hybrid providers must disclose whether cloud may be used.
 
 ### Cross-user cache leak
 
 Mitigation:
 
-- app includes user/account scope in `InferenceKey` or fingerprint metadata
-- docs warn about multi-user environments
+- app includes user/account scope in `InferenceKey` or fingerprint metadata;
+- docs warn about multi-user environments;
+- privacy class/policy version included in fingerprint.
+
+### API-key exposure
+
+Mitigation:
+
+- no secrets in traces or errors;
+- app-owned secure storage recipes;
+- recommend backend proxy/token broker for third-party cloud APIs.
 
 ## Testkit privacy assertions
 
@@ -219,6 +194,7 @@ assertRoute(result.trace) {
 assertMonitorEvents(monitor) {
     containsNoRawPrompt()
     containsNoRawOutput()
+    containsNoSecrets()
 }
 ```
 
@@ -228,14 +204,16 @@ assertMonitorEvents(monitor) {
 - [ ] Raw request/response logging is opt-in.
 - [ ] Errors are mapped and redacted.
 - [ ] Provider kind is accurate.
-- [ ] Cloud/local boundary is documented.
+- [ ] Provider privacy boundary is accurate.
+- [ ] Cloud/local/hybrid behavior is documented.
 - [ ] Cancellation is supported or documented.
+- [ ] Timeouts are mapped correctly.
 - [ ] Telemetry payloads are redacted.
 - [ ] Tests cover redaction.
 
-## Open questions
+## Resolved questions
 
-1. Should privacy defaults be strict enough to annoy developers? Recommendation: yes, with clear opt-in.
-2. Should cloud be denied by default? Recommendation: no for `Default`, yes for `Sensitive` and `LocalOnly`.
-3. Should provider privacy metadata be required? Recommendation: yes.
-4. Should storage encryption be built-in? Recommendation: no in core; provide hooks and recipes.
+1. Should privacy defaults be strict enough to annoy developers? **Yes.** Strict defaults plus explicit demo helpers.
+2. Should cloud be denied by default? **Yes for `PrivacyPolicy.Default`; `Public` helper may allow cloud.**
+3. Should provider privacy metadata be required? **Yes.**
+4. Should storage encryption be built in? **No in core; provide hooks and recipes.**

@@ -1,6 +1,6 @@
 # Storage model
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Purpose
 
@@ -86,6 +86,7 @@ CREATE TABLE inference_artifact (
     prompt_version TEXT,
     output_version TEXT,
     privacy_class TEXT NOT NULL,
+    privacy_policy_version TEXT,
     provider_id TEXT NOT NULL,
     provider_kind TEXT NOT NULL,
     model_id TEXT,
@@ -127,11 +128,11 @@ CREATE TABLE provider_inventory (
 
 ## Privacy considerations
 
-Storage must support:
+Storage must honor `PrivacyPolicy.persistence` from `privacy-model.md`. Storage must support:
 
-- no prompt persistence
-- no output persistence
-- hash-only traces
+- no prompt persistence;
+- no output persistence;
+- redacted/hash-only traces
 - encrypted store implementation hook
 - per-key deletion
 - delete all
@@ -177,4 +178,4 @@ Post-MVP:
 1. Should artifact store support partial streamed outputs? Recommendation: no in MVP.
 2. Should route traces persist if output is not persisted? Recommendation: yes, but redacted.
 3. Should provider inventory be separate from route journal? Recommendation: yes.
-4. Should storage include prompts? Recommendation: opt-in only.
+4. Should storage include prompts? Recommendation: opt-in only and only when `PrivacyPolicy.persistence.persistPrompt` allows it.

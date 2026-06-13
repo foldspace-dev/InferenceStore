@@ -1,24 +1,20 @@
 # Issue backlog summary
-
-Generated: 2026-06-13
-
+Updated: 2026-06-13
 ## Counts by milestone
-
-- M1 Core prototype: 9
-- M2 Alpha: 15
-- M3 Production hardening: 3
+- M0 Validation: 5
+- M1 Core prototype: 14
+- M2 Alpha: 12
 - M3 Mobile proof: 3
-- M4 Meeseeks lifecycle: 3
-- M0 Validation: 3
+- M4 Production hardening: 3
+- M5 Meeseeks lifecycle: 3
 
 ## Issues
-
 - [001] Create initial repository skeleton and module layout — M1 Core prototype — area/build, type/task, priority/p0
 - [002] Define core request and key model — M1 Core prototype — area/core, type/feature, priority/p0
 - [003] Define provider contract and provider metadata — M1 Core prototype — area/provider, type/feature, priority/p0
 - [004] Implement streaming-first InferenceStore API — M1 Core prototype — area/core, type/feature, priority/p0
 - [005] Implement route trace and event model — M1 Core prototype — area/observability, type/feature, priority/p0
-- [006] Implement built-in local/cloud policy presets — M1 Core prototype — area/policy, type/feature, priority/p0
+- [006] Implement five built-in local/cloud policy presets — M1 Core prototype — area/policy, type/feature, priority/p0
 - [007] Add privacy policy model and enforcement — M1 Core prototype — area/security, type/feature, priority/p0
 - [008] Implement output validators and validation-triggered fallback — M1 Core prototype — area/validation, type/feature, priority/p0
 - [009] Create testkit fake provider and route assertions — M1 Core prototype — area/testkit, type/feature, priority/p0
@@ -27,25 +23,29 @@ Generated: 2026-06-13
 - [012] Define cache and artifact store interfaces — M2 Alpha — area/cache, type/feature, priority/p1
 - [013] Implement in-memory cache — M2 Alpha — area/cache, type/feature, priority/p1
 - [014] Implement monitor hooks — M2 Alpha — area/observability, type/feature, priority/p1
-- [015] Build OpenAI-compatible provider adapter — M2 Alpha — area/provider, type/feature, priority/p1
+- [015] Build OpenAI-compatible provider adapter — M1 Core prototype — area/provider, area/security, type/feature, priority/p1
 - [016] Create sample: private note summarization — M2 Alpha — area/samples, type/feature, priority/p1
 - [017] Write Quickstart documentation — M2 Alpha — area/docs, type/docs, priority/p1
 - [018] Write provider adapter authoring guide — M2 Alpha — area/docs, area/provider, type/docs, priority/p1
 - [019] Design JSON/schema structured output support — M2 Alpha — area/validation, type/rfc, priority/p1
-- [020] Add route journal interface — M3 Production hardening — area/reliability, type/feature, priority/p2
-- [021] Add timeout and retry semantics — M2 Alpha — area/reliability, type/feature, priority/p1
-- [022] Evaluate first local adapter choice — M2 Alpha — area/research, area/provider, type/research, priority/p1
-- [023] Prototype Android local/platform adapter — M3 Mobile proof — area/provider, platform/android, type/feature, priority/p2
-- [024] Prototype iOS local/platform adapter — M3 Mobile proof — area/provider, platform/ios, type/feature, priority/p2
+- [020] Add route journal interface — M4 Production hardening — area/reliability, type/feature, priority/p2
+- [021] Add timeout and retry semantics — M1 Core prototype — area/reliability, type/feature, priority/p0
+- [022] Decide first real local adapter: LiteRT-LM — M0 Validation — area/research, area/provider, type/decision, priority/p0
+- [023] Prototype Firebase AI Logic Android adapter — M3 Mobile proof — area/provider, platform/android, type/feature, priority/p2
+- [024] Decide and prototype first iOS local/platform adapter — M3 Mobile proof — area/provider, platform/ios, type/research, priority/p2
 - [025] Create cross-platform sample app — M3 Mobile proof — area/samples, platform/android, platform/ios, type/feature, priority/p2
-- [026] Add SQLDelight artifact store prototype — M3 Production hardening — area/storage, type/feature, priority/p2
-- [027] Add OpenTelemetry monitor exporter — M3 Production hardening — area/observability, type/feature, priority/p2
-- [028] Create Meeseeks provider inventory refresh worker — M4 Meeseeks lifecycle — area/meeseeks, type/feature, priority/p2
-- [029] Create Meeseeks model warmup worker — M4 Meeseeks lifecycle — area/meeseeks, type/feature, priority/p3
-- [030] Create Meeseeks telemetry upload worker — M4 Meeseeks lifecycle — area/meeseeks, area/observability, type/feature, priority/p3
+- [026] Add SQLDelight artifact store prototype — M4 Production hardening — area/storage, type/feature, priority/p2
+- [027] Add OpenTelemetry monitor exporter — M4 Production hardening — area/observability, type/feature, priority/p2
+- [028] Create Meeseeks provider inventory refresh worker — M5 Meeseeks lifecycle — area/meeseeks, type/feature, priority/p2
+- [029] Create Meeseeks model warmup worker — M5 Meeseeks lifecycle — area/meeseeks, type/feature, priority/p3
+- [030] Create Meeseeks telemetry upload worker — M5 Meeseeks lifecycle — area/meeseeks, area/observability, type/feature, priority/p3
 - [031] Write security and privacy guide — M2 Alpha — area/docs, area/security, type/docs, priority/p1
 - [032] Create competitive landscape document — M0 Validation — area/research, type/docs, priority/p2
 - [033] Open public RFC discussion for core API — M0 Validation — area/community, type/rfc, priority/p1
 - [034] Build validation demo with fake providers — M0 Validation — area/demo, type/feature, priority/p0
 - [035] Set up release automation and snapshot publishing — M2 Alpha — area/build, type/task, priority/p2
 - [036] Create documentation site skeleton — M2 Alpha — area/docs, type/task, priority/p2
+- [037] Run validation interviews and record MVP gate decision — M0 Validation — area/research, area/community, type/task, priority/p0
+- [038] Implement LiteRT-LM Android/JVM local adapter — M1 Core prototype — area/provider, platform/android, platform/jvm, type/feature, priority/p0
+- [039] Implement threading, cancellation, and dedupe fan-out contract — M1 Core prototype — area/core, area/reliability, type/feature, priority/p0
+- [040] Implement error category to fallback mapping contract — M1 Core prototype — area/core, area/reliability, type/feature, priority/p0

@@ -1,6 +1,6 @@
 # Positioning and messaging
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## One-line positioning
 
@@ -163,8 +163,14 @@ Policy-driven inference orchestration for Kotlin Multiplatform.
 
 ```kotlin
 val answer = inferenceStore.generate(
-    request = InferenceRequest.text("Summarize this note", note.body),
-    policy = Policies.localFirstCloudFallback()
+    request = InferenceRequest.text(
+        key = InferenceKey("notes.summary", note.id),
+        input = note.body,
+        privacy = PrivacyPolicy.personal(
+            cloud = CloudPermission.ApprovedProviders(setOf(ProviderId("cloud")))
+        )
+    ),
+    policy = Policies.preferLocalThenCloud()
 )
 ```
 
@@ -188,3 +194,8 @@ Good first contribution categories:
 - Documentation recipe
 - Testkit scenario
 - Runtime capability matrix
+
+
+## MVP credibility note
+
+The alpha must not be fake-only. Fake providers are for deterministic tests, but the MVP includes LiteRT-LM Android/JVM as a real local adapter so the launch narrative demonstrates real local-runtime behavior.

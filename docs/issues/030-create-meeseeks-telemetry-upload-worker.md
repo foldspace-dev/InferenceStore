@@ -1,7 +1,7 @@
 # Create Meeseeks telemetry upload worker
 
 Labels: `area/meeseeks`, `area/observability`, `type/feature`, `priority/p3`  
-Milestone: `M4 Meeseeks lifecycle`  
+Milestone: `M5 Meeseeks lifecycle`  
 Dependencies: #14, #28
 
 ## Problem
@@ -22,4 +22,4 @@ Add optional worker that uploads redacted route telemetry batches.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

@@ -1,6 +1,6 @@
 # InferenceStore: Store-like inference orchestration for Kotlin Multiplatform
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 This document set is an opinionated starting point for building **“Store, but for inference”**: a Kotlin Multiplatform library that gives application teams a deterministic, testable, observable way to choose between local and cloud inference.
 
@@ -8,28 +8,42 @@ The core thesis:
 
 > App developers should call one inference API and get policy-driven routing, fallback, validation, caching, deduplication, observability, and background model lifecycle management — without hard-coding every model/runtime/provider decision into feature code.
 
+## What changed in this revision
+
+This package now incorporates the planning critique:
+
+- `docs/technical/privacy-model.md` is the single source of truth for privacy classes, cloud permission, persistence, telemetry, and provider boundaries.
+- LiteRT-LM Android/JVM is pulled into the MVP as the first real local adapter.
+- The PRD is reconciled with the RFCs/ADRs: request-first API, final-output validation in MVP, five built-in policy presets, canonical event model, and M5 Meeseeks lifecycle.
+- Issue #037 wires the 8/15 validation gate into the backlog.
+- The missing contracts are written: threading/dispatchers/dedupe, error-to-fallback mapping, and timeout/retry policy.
+- `docs/REVISION_NOTES.md` summarizes the full patch set and backlog changes.
+
 ## Why this is not another local LLM wrapper
 
 The runtime ecosystem is moving quickly. LiteRT-LM, ExecuTorch, MLC LLM, Llamatik, Cactus, Firebase AI Logic, Apple Foundation Models, and other SDKs already target model execution. InferenceStore should sit **above** them.
 
 The initial library should own:
 
-- **Policy**: local-first, cloud-first, local-only, cloud-only, privacy-first, cost-aware, latency-aware, quality-repair.
-- **Provider abstraction**: runtime/cloud adapters with capability and availability reporting.
+- **Policy**: local-only, cloud-only, prefer-local-then-cloud, prefer-cloud-then-local, validate-local-then-cloud-repair.
+- **Privacy**: request-level privacy class, cloud permission, persistence permission, telemetry permission, and provider-boundary enforcement before invocation.
+- **Provider abstraction**: runtime/cloud adapters with capability, availability, model metadata, and privacy boundary reporting.
 - **Request orchestration**: streaming, retries, timeouts, cancellation, dedupe, fallback.
 - **Validation and repair**: schema validation, task-specific validators, evaluator hooks, cloud repair paths.
 - **Cache and source-of-truth semantics**: prompt/result fingerprints, model-version-aware artifacts, privacy-safe persistence.
 - **Observability**: route decisions, fallback reasons, latency, token counts, estimated cost, validator outcomes.
-- **Background lifecycle**: model download, warmup, pruning, telemetry upload, precomputation through Meeseeks.
+- **Background lifecycle**: model download, warmup, pruning, telemetry upload, precomputation through Meeseeks after the core stabilizes.
 
 ## Repository layout
 
 ```text
 docs/
+  REVISION_NOTES.md
   strategy/
     strategy.md
     positioning.md
     validation-plan.md
+    competitive-landscape.md
   prd/
     product-requirements.md
     mvp-scope.md
@@ -37,8 +51,14 @@ docs/
   technical/
     architecture.md
     api-design.md
+    event-model.md
+    privacy-model.md
     routing-policy.md
     provider-adapters.md
+    litert-lm-adapter.md
+    threading-dispatchers.md
+    error-fallback-mapping.md
+    timeout-retry-policy.md
     caching-validation-dedupe.md
     observability-evals.md
     storage-model.md
@@ -57,6 +77,7 @@ docs/
     0002-provider-adapters-not-runtime.md
     0003-streaming-first.md
     0004-privacy-policy-as-api.md
+    0005-first-real-local-adapter-litertlm.md
   issues/
     README.md
     issues.csv
@@ -82,6 +103,9 @@ kotlin {
         commonMain.dependencies {
             implementation("dev.mattramotar.inferencestore:core:<version>")
         }
+        androidMain.dependencies {
+            implementation("dev.mattramotar.inferencestore:provider-litertlm-android:<version>")
+        }
     }
 }
 ```
@@ -91,15 +115,11 @@ kotlin {
 ```kotlin
 val store = InferenceStore.build {
     providers {
-        register(localProvider)
+        register(liteRtLmProvider)
         register(openAiCompatibleProvider)
     }
 
-    policy = Policies.preferLocalThenCloud {
-        requirePrivacyBoundary()
-        maxLocalLatency(2.seconds)
-        fallbackOn(OutputFailure.SchemaInvalid)
-    }
+    policy = Policies.preferLocalThenCloud()
 
     cache(outputCache)
     monitor(myMonitor)
@@ -109,13 +129,17 @@ store.stream(
     InferenceRequest.text(
         key = InferenceKey("notes.summary", note.id),
         input = note.body,
-        output = Summary.serializer()
+        output = Summary.serializer(),
+        privacy = PrivacyPolicy.personal(
+            cloud = CloudPermission.ApprovedProviders(setOf(ProviderId("openai-compatible")))
+        )
     )
 ).collect { event ->
     when (event) {
         is InferenceEvent.Token -> render(event.text)
-        is InferenceEvent.Done -> save(event.output)
-        is InferenceEvent.RouteChanged -> log(event.reason)
+        is InferenceEvent.Done -> save(event.result.output)
+        is InferenceEvent.FallbackStarted -> log(event.reason)
+        else -> Unit
     }
 }
 ```
@@ -124,16 +148,17 @@ store.stream(
 
 Start with a **thin vertical slice**:
 
-1. KMP `core`.
-2. Fake provider and testkit.
-3. OpenAI-compatible cloud adapter.
-4. One local adapter behind an optional module.
-5. Local-first/cloud-fallback policy.
-6. Schema validation.
-7. Route telemetry.
-8. One sample app: private note summarization.
+1. Complete the M0 validation gate.
+2. KMP `core`.
+3. Fake provider and testkit.
+4. OpenAI-compatible cloud adapter.
+5. LiteRT-LM Android/JVM real local adapter.
+6. Local-first/cloud-fallback policy.
+7. Final-output schema validation.
+8. Route telemetry.
+9. One sample app: private note summarization.
 
-Defer model download management, semantic cache, speculative execution, and multi-runtime support until the core semantics feel right.
+Defer model download management, semantic cache, speculative execution, iOS adapter parity, and multi-runtime breadth until the core semantics feel right.
 
 ## References consulted
 

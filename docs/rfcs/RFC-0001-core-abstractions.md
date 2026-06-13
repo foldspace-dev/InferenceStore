@@ -1,7 +1,7 @@
 # RFC-0001: Core abstractions
 
-Status: Draft  
-Generated: 2026-06-13
+Status: Accepted for MVP  
+Updated: 2026-06-13
 
 ## Summary
 
@@ -45,22 +45,17 @@ data class InferenceRequest<Output : Any>(
     val policy: InferencePolicy? = null,
     val privacy: PrivacyPolicy = PrivacyPolicy.Default,
     val cache: CachePolicy = CachePolicy.Default,
-    val timeout: Duration? = null,
+    val timeout: TimeoutPolicy = TimeoutPolicy.Default,
+    val retry: RetryPolicy = RetryPolicy.Default,
     val prompt: PromptSpec? = null,
     val metadata: Map<String, String> = emptyMap()
 )
 ```
 
-## Decision points
+## Decisions
 
-1. Should `key` be required?
-2. Should `OutputSpec` include serializer?
-3. Should privacy be required?
-4. Should `generate` be implemented as first `Done` from `stream`?
-
-## Recommendation
-
-- Require `key` for core request.
-- Provide convenience APIs that generate ephemeral keys.
-- Require privacy default.
-- Make `stream` primary; `generate` is convenience.
+- `key` is required for core request when cache, dedupe, artifacts, or durable traces are enabled. Convenience APIs may generate ephemeral keys only when cache and dedupe are disabled.
+- `OutputSpec` includes serializers only for typed JSON/custom outputs. Text remains simple.
+- Every request carries `PrivacyPolicy`; `privacy-model.md` owns defaults.
+- `stream` is primary; `generate` is convenience over the terminal `Done` result.
+- MVP validates final output only. Partial validation is post-MVP.

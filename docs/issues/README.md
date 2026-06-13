@@ -1,22 +1,25 @@
-# GitHub-ready issue backlog
+# Issues
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
-This folder contains a proposed issue backlog for the first validation, alpha, mobile-proof, production-hardening, and Meeseeks-lifecycle milestones.
+This directory contains the planning backlog for InferenceStore. The backlog is generated in three forms:
+
+- per-issue Markdown files;
+- `issues.csv`;
+- `issues.json`;
+- `backlog-summary.md`.
 
 ## Milestones
 
-| Milestone | Goal |
+| Milestone | Meaning |
 |---|---|
-| M0 Validation | Prove the need and refine the API before implementation hardens. |
-| M1 Core prototype | Implement core request/provider/policy/streaming/testkit semantics. |
-| M2 Alpha | Add cloud adapter, docs, sample, cache/dedupe, monitor hooks. |
-| M3 Mobile proof / Production hardening | Add real mobile adapters, persistent storage, observability exporter. |
-| M4 Meeseeks lifecycle | Add background provider/model lifecycle tasks. |
+| M0 Validation | Validate demand, first adapter decision, and gate M1 on 8/15 interview signal. |
+| M1 Core prototype | Core API, canonical contracts, fake/testkit, OpenAI-compatible adapter, LiteRT-LM Android/JVM adapter. |
+| M2 Alpha | Quickstart, sample app, route monitor, in-memory cache, dedupe, docs, publishing. |
+| M3 Mobile proof | iOS adapter decision/prototype and mobile sample proof. |
+| M4 Production hardening | Persistent storage, route journal, telemetry exporters, privacy recipes, compatibility hardening. |
+| M5 Meeseeks lifecycle | Background provider/model lifecycle tasks. |
 
-## Import options
+## Import note
 
-- Use the individual markdown files as copy/paste GitHub issues.
-- Use `issues.csv` for project-board import.
-- Use `issues.json` for scripts.
-- Use `scripts/create-github-issues.sh` as a starting point for `gh issue create`.
+Review the issues before importing. The `scripts/create-github-issues.sh` helper intentionally creates issues with the generated body files, labels, and milestones, but it does not create labels or milestones for you.

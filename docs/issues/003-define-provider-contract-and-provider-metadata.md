@@ -2,7 +2,7 @@
 
 Labels: `area/provider`, `type/feature`, `priority/p0`  
 Milestone: `M1 Core prototype`  
-Dependencies: #1, #2
+Dependencies: #1, #2, #37
 
 ## Problem
 
@@ -10,16 +10,16 @@ Provider adapters need a common contract for availability, capabilities, streami
 
 ## Proposal
 
-Implement `InferenceProvider`, `ProviderId`, `ProviderKind`, `ProviderAvailability`, `Capability`, `CapabilityReport`, `ProviderMetadata`, `ProviderEvent`, and `ProviderError`.
+Implement provider contract with provider ID, kind, privacy boundary, availability, capability reports, streaming, provider metadata, and stable error mapping.
 
 ## Acceptance criteria
 
-- [ ] Providers can report availability without executing inference.
-- [ ] Providers can report capability support for a request.
-- [ ] Provider events support started/token/completed/failed.
+- [ ] Provider contract includes `ProviderPrivacyBoundary`.
+- [ ] Availability and capability checks are suspending and bounded by timeout policy.
 - [ ] Provider errors map to stable categories.
-- [ ] No provider-specific dependencies enter core.
+- [ ] Provider metadata includes model/runtime/boundary fields.
+- [ ] Docs explain adapter responsibilities and non-responsibilities.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

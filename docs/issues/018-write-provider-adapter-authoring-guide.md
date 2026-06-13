@@ -2,7 +2,7 @@
 
 Labels: `area/docs`, `area/provider`, `type/docs`, `priority/p1`  
 Milestone: `M2 Alpha`  
-Dependencies: #3, #9
+Dependencies: #3, #9, #39, #40
 
 ## Problem
 
@@ -16,10 +16,11 @@ Document provider contract, availability/capability mapping, streaming, cancella
 
 - [ ] Guide explains adapter responsibilities and non-responsibilities.
 - [ ] Guide includes minimal provider implementation.
-- [ ] Guide includes adapter test checklist.
-- [ ] Guide explains maturity levels.
-- [ ] Guide lists known adapter candidates.
+- [ ] Guide includes threading/dispatcher requirements.
+- [ ] Guide includes error mapping checklist.
+- [ ] Guide includes privacy boundary requirements.
+- [ ] Guide explains maturity levels and known adapter candidates.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

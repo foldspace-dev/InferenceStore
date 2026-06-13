@@ -1,7 +1,7 @@
 # RFC-0002: Provider adapter model
 
-Status: Draft  
-Generated: 2026-06-13
+Status: Accepted for MVP  
+Updated: 2026-06-13
 
 ## Summary
 
@@ -17,6 +17,7 @@ Inference runtimes are volatile and platform-specific. The core library should i
 interface InferenceProvider {
     val id: ProviderId
     val kind: ProviderKind
+    val boundary: ProviderPrivacyBoundary
 
     suspend fun availability(context: InferenceContext): ProviderAvailability
 
@@ -60,3 +61,6 @@ Adapters should be marked Experimental/Alpha/Beta/Stable independently of core.
 - OpenAI-compatible adapter can implement it.
 - Platform-specific adapters can implement it without core changes.
 - Capability unsupported can be represented without throwing.
+- Provider privacy boundary is declared.
+- Error categories are mapped according to `error-fallback-mapping.md`.
+- Local runtime adapters obey `threading-dispatchers.md`.

@@ -1,7 +1,7 @@
 # RFC-0005: Meeseeks model lifecycle integration
 
-Status: Draft  
-Generated: 2026-06-13
+Status: Draft for M5  
+Updated: 2026-06-13
 
 ## Summary
 
@@ -36,7 +36,7 @@ Provide task payloads and workers for:
 
 ## First implementation
 
-Provider inventory refresh worker.
+M5 provider inventory refresh worker. Foreground inference, MVP routing, and the LiteRT-LM adapter do not depend on Meeseeks.
 
 ## Acceptance criteria
 

@@ -1,7 +1,7 @@
 # ADR-0002: Provider adapters, not a new inference runtime
 
 Status: Accepted  
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Context
 

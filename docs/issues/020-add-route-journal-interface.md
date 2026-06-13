@@ -1,7 +1,7 @@
 # Add route journal interface
 
 Labels: `area/reliability`, `type/feature`, `priority/p2`  
-Milestone: `M3 Production hardening`  
+Milestone: `M4 Production hardening`  
 Dependencies: #5, #14
 
 ## Problem
@@ -22,4 +22,4 @@ Define `RouteJournal` and in-memory implementation for provider attempt history,
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

@@ -1,6 +1,6 @@
 # Validation plan
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
 ## Goal
 
@@ -87,15 +87,18 @@ Minimum 15 conversations:
 
 ## Prototype validation
 
-Build a tiny prototype that can demo:
+M0 validation can use static/scripted traces and fake providers to test the concept before building the library. It must not depend on M1 implementation issues.
 
-- local fake provider succeeds
-- local fake provider unavailable -> cloud fake provider
-- local fake provider invalid schema -> cloud repair provider
-- policy result includes route explanation
-- test asserts route and fallback reason
+Demo traces:
 
-No real runtime needed for the first validation demo.
+- local fake provider succeeds;
+- local fake provider unavailable -> cloud fake provider;
+- local fake provider invalid schema -> cloud repair provider;
+- local-only privacy blocks cloud before invocation;
+- policy result includes route explanation;
+- test sketch asserts route and fallback reason.
+
+The MVP build that follows validation must add a real LiteRT-LM local adapter; fake-only validation is not sufficient for the MVP acceptance criteria.
 
 ## Landing page claims to test
 
@@ -109,9 +112,9 @@ Track which claim resonates.
 
 ## Success criteria
 
-Proceed to MVP if at least 8 of 15 interviewees say they would try it and at least 5 have a concrete near-term feature.
+Proceed to M1/MVP build if at least 8 of 15 interviewees say they would try it and at least 5 have a concrete near-term feature. Record the result in issue #037. If building proceeds without this signal, record an explicit maintainer waiver.
 
-Proceed to adapters if at least 3 teams identify the same local runtime or platform path.
+Proceed beyond the LiteRT-LM MVP adapter if at least 3 teams identify the same additional local runtime or platform path.
 
 Proceed to Meeseeks integration if at least 3 teams identify model download/warmup/pruning as a blocker.
 
@@ -132,3 +135,8 @@ Proceed to Meeseeks integration if at least 3 teams identify model download/warm
 - fake-provider test suite
 - comparison matrix
 - GitHub discussion thread
+
+
+## Backlog wiring
+
+Issue #037 is the validation gate. M1 build issues are considered blocked until #037 records pass/waive. Issue #034 remains an M0 demo issue but must use static/scripted traces or a throwaway prototype, not depend on M1 core implementation.

@@ -1,7 +1,7 @@
 # Create Meeseeks model warmup worker
 
 Labels: `area/meeseeks`, `type/feature`, `priority/p3`  
-Milestone: `M4 Meeseeks lifecycle`  
+Milestone: `M5 Meeseeks lifecycle`  
 Dependencies: #28
 
 ## Problem
@@ -22,4 +22,4 @@ Define optional provider lifecycle interface and Meeseeks worker for model warmu
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

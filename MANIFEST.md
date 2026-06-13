@@ -1,21 +1,24 @@
 # Document manifest
 
-Generated: 2026-06-13
+Updated: 2026-06-13
 
-Total files: 76
+Total files: 89
 
+- `MANIFEST.md`
 - `README.md`
 - `docs/00-source-notes.md`
+- `docs/REVISION_NOTES.md`
 - `docs/adr/0001-kmp-first.md`
 - `docs/adr/0002-provider-adapters-not-runtime.md`
 - `docs/adr/0003-streaming-first.md`
 - `docs/adr/0004-privacy-policy-as-api.md`
+- `docs/adr/0005-first-real-local-adapter-litertlm.md`
 - `docs/issues/001-create-initial-repository-skeleton-and-module-layout.md`
 - `docs/issues/002-define-core-request-and-key-model.md`
 - `docs/issues/003-define-provider-contract-and-provider-metadata.md`
 - `docs/issues/004-implement-streaming-first-inferencestore-api.md`
 - `docs/issues/005-implement-route-trace-and-event-model.md`
-- `docs/issues/006-implement-built-in-local-cloud-policy-presets.md`
+- `docs/issues/006-implement-five-built-in-local-cloud-policy-presets.md`
 - `docs/issues/007-add-privacy-policy-model-and-enforcement.md`
 - `docs/issues/008-implement-output-validators-and-validation-triggered-fallback.md`
 - `docs/issues/009-create-testkit-fake-provider-and-route-assertions.md`
@@ -31,9 +34,9 @@ Total files: 76
 - `docs/issues/019-design-json-schema-structured-output-support.md`
 - `docs/issues/020-add-route-journal-interface.md`
 - `docs/issues/021-add-timeout-and-retry-semantics.md`
-- `docs/issues/022-evaluate-first-local-adapter-choice.md`
-- `docs/issues/023-prototype-android-local-platform-adapter.md`
-- `docs/issues/024-prototype-ios-local-platform-adapter.md`
+- `docs/issues/022-decide-first-real-local-adapter-litert-lm.md`
+- `docs/issues/023-prototype-firebase-ai-logic-android-adapter.md`
+- `docs/issues/024-decide-and-prototype-first-ios-local-platform-adapter.md`
 - `docs/issues/025-create-cross-platform-sample-app.md`
 - `docs/issues/026-add-sqldelight-artifact-store-prototype.md`
 - `docs/issues/027-add-opentelemetry-monitor-exporter.md`
@@ -46,6 +49,10 @@ Total files: 76
 - `docs/issues/034-build-validation-demo-with-fake-providers.md`
 - `docs/issues/035-set-up-release-automation-and-snapshot-publishing.md`
 - `docs/issues/036-create-documentation-site-skeleton.md`
+- `docs/issues/037-run-validation-interviews-and-record-mvp-gate-decision.md`
+- `docs/issues/038-implement-litert-lm-android-jvm-local-adapter.md`
+- `docs/issues/039-implement-threading-cancellation-and-dedupe-fan-out-contract.md`
+- `docs/issues/040-implement-error-category-to-fallback-mapping-contract.md`
 - `docs/issues/README.md`
 - `docs/issues/backlog-summary.md`
 - `docs/issues/issues.csv`
@@ -67,8 +74,12 @@ Total files: 76
 - `docs/technical/api-design.md`
 - `docs/technical/architecture.md`
 - `docs/technical/caching-validation-dedupe.md`
+- `docs/technical/error-fallback-mapping.md`
+- `docs/technical/event-model.md`
+- `docs/technical/litert-lm-adapter.md`
 - `docs/technical/meeseeks-integration.md`
 - `docs/technical/observability-evals.md`
+- `docs/technical/privacy-model.md`
 - `docs/technical/provider-adapters.md`
 - `docs/technical/release-plan.md`
 - `docs/technical/routing-policy.md`
@@ -76,6 +87,8 @@ Total files: 76
 - `docs/technical/storage-model.md`
 - `docs/technical/store-meeseeks-fit.md`
 - `docs/technical/testing.md`
+- `docs/technical/threading-dispatchers.md`
+- `docs/technical/timeout-retry-policy.md`
 - `scripts/create-github-issues.sh`
 - `templates/adr-template.md`
 - `templates/issue-template.md`

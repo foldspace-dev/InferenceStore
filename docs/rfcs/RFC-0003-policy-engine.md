@@ -1,7 +1,7 @@
 # RFC-0003: Policy engine
 
-Status: Draft  
-Generated: 2026-06-13
+Status: Accepted for MVP  
+Updated: 2026-06-13
 
 ## Summary
 
@@ -29,23 +29,16 @@ fun interface InferencePolicy {
 - `cloudOnly`
 - `preferLocalThenCloud`
 - `preferCloudThenLocal`
-- `validateLocalRepairWithCloud`
-- `privacyFirst`
+- `validateLocalThenCloudRepair`
 
 ## Guardrails
 
 The execution controller enforces privacy regardless of policy bugs.
 
-## Open questions
+## Decisions
 
-1. Should policies be pure and non-suspending?
-2. Should availability probing happen before policy or inside policy?
-3. Should route journal be visible to policy?
-4. Should fallback be route-level or policy-level?
-
-## Recommendation
-
-- Make policy suspending.
-- Provide precomputed candidate reports to policy.
-- Allow optional route journal context.
-- Keep fallback rules in route plan.
+- Policy is suspending.
+- Provider candidate reports are precomputed before policy when possible.
+- Optional route journal context is allowed.
+- Fallback rules are represented in the route plan and executed by the controller.
+- Privacy is not a built-in policy preset; privacy is enforced by `PrivacyPolicy` before provider invocation.

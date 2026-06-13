@@ -22,4 +22,4 @@ Configure CI, signing/publishing path, changelog, versioning, and release notes.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.

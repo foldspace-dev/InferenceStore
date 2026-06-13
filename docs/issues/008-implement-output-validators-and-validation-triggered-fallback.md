@@ -2,7 +2,7 @@
 
 Labels: `area/validation`, `type/feature`, `priority/p0`  
 Milestone: `M1 Core prototype`  
-Dependencies: #4, #5, #6
+Dependencies: #4, #5, #6, #37
 
 ## Problem
 
@@ -14,12 +14,12 @@ Implement `OutputValidator`, `ValidationResult`, predicate validator helpers, an
 
 ## Acceptance criteria
 
-- [ ] Predicate validators can pass/fail final output.
-- [ ] Validation result is included in route trace.
-- [ ] Policy can fall back on validation failure.
-- [ ] Schema/JSON validation has either initial implementation or RFC stub.
-- [ ] Tests cover local invalid -> cloud repair.
+- [ ] Predicate validator works on final output.
+- [ ] Parser/schema failure maps to stable error categories.
+- [ ] Validation failure can trigger configured fallback/repair.
+- [ ] Partial validation is explicitly out of MVP.
+- [ ] Tests cover local-invalid -> cloud-repair route.
 
 ## Notes
 
-This issue is part of the initial InferenceStore planning backlog. Adjust scope after API validation.
+This issue is part of the InferenceStore planning backlog. Adjust scope after API validation.
