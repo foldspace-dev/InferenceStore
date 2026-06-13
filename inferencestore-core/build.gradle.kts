@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val androidEnabled = System.getProperty("inferencestore.androidEnabled").toBoolean()
+val androidEnabled = System.getProperty("inferencestore.androidEnabled") == "true"
 
 if (androidEnabled) {
     apply(plugin = libs.plugins.android.library.get().pluginId)

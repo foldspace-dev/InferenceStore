@@ -37,8 +37,10 @@ System.setProperty(
         val fromEnv = env != null && File(env).isDirectory
         val localProps = File(rootDir, "local.properties")
         val fromLocalProps = localProps.exists() && runCatching {
-            java.util.Properties().apply { localProps.inputStream().use { load(it) } }
-                .getProperty("sdk.dir") != null
+            val sdkDir = java.util.Properties()
+                .apply { localProps.inputStream().use { load(it) } }
+                .getProperty("sdk.dir")
+            sdkDir != null && File(sdkDir).isDirectory
         }.getOrElse { false }
         (fromEnv || fromLocalProps).toString()
     },

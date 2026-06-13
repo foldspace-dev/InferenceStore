@@ -3,7 +3,7 @@ plugins {
 }
 
 // LiteRT-LM is an Android/JVM runtime, so this adapter declares only those targets.
-val androidEnabled = System.getProperty("inferencestore.androidEnabled").toBoolean()
+val androidEnabled = System.getProperty("inferencestore.androidEnabled") == "true"
 
 if (androidEnabled) {
     apply(plugin = libs.plugins.android.library.get().pluginId)
