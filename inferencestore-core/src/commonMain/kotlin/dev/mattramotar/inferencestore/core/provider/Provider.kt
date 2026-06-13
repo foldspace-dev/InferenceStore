@@ -1,0 +1,144 @@
+package dev.mattramotar.inferencestore.core.provider
+
+import dev.mattramotar.inferencestore.core.model.InferenceInput
+import dev.mattramotar.inferencestore.core.model.InferenceKey
+import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.model.OutputSpec
+import dev.mattramotar.inferencestore.core.model.PromptSpec
+import dev.mattramotar.inferencestore.core.policy.TimeoutPolicy
+import kotlinx.coroutines.flow.Flow
+import kotlin.jvm.JvmInline
+
+/** Stable provider identifier. */
+@JvmInline
+public value class ProviderId(public val value: String)
+
+/** Where a provider runs / who operates it. Drives privacy and routing decisions. */
+public enum class ProviderKind { Local, Cloud, Platform, Remote, Test }
+
+/**
+ * The adapter contract. Implementations connect InferenceStore to a real
+ * inference system (local runtime, platform API, cloud API, app backend, or a
+ * test fake). Core never depends on adapter implementation details.
+ *
+ * Adapters report availability/capabilities and stream provider events; they do
+ * not own routing policy or persistence. See `provider-adapters.md`.
+ */
+public interface InferenceProvider {
+    public val id: ProviderId
+    public val kind: ProviderKind
+    public val boundary: ProviderPrivacyBoundary
+
+    /** Suspending availability probe; the engine bounds it by the availability timeout. */
+    public suspend fun availability(context: InferenceContext): ProviderAvailability
+
+    /** Reports whether this provider can serve [request] and which capabilities it offers. */
+    public suspend fun capabilities(
+        request: InferenceRequest<*>,
+        context: InferenceContext,
+    ): CapabilityReport
+
+    /** Cold stream of provider events for a single attempt. */
+    public fun <Output : Any> stream(
+        request: ProviderRequest<Output>,
+        context: InferenceContext,
+    ): Flow<ProviderEvent<Output>>
+}
+
+/**
+ * Per-attempt execution context supplied by the engine. Carries the effective
+ * [timeout] so availability/capability probes and streaming can be bounded
+ * (binding is enforced by the engine — OSS-10 / OSS-18). [attributes] is an
+ * adapter-readable bag for engine-provided hints.
+ */
+public class InferenceContext(
+    public val timeout: TimeoutPolicy = TimeoutPolicy.Default,
+    public val attributes: Map<String, String> = emptyMap(),
+)
+
+/** Result of [InferenceProvider.availability]. */
+public sealed interface ProviderAvailability {
+    public data object Available : ProviderAvailability
+    public data class Unavailable(public val reason: UnavailableReason) : ProviderAvailability
+}
+
+public enum class UnavailableReason { NetworkUnavailable, ModelMissing, Unsupported, Disabled, Unknown }
+
+/** Result of [InferenceProvider.capabilities]. */
+public data class CapabilityReport(
+    public val supported: Boolean,
+    public val capabilities: Set<Capability>,
+)
+
+/**
+ * Provider capabilities. Extensible — new capabilities can be added without
+ * changing the contract. Not every provider supports every capability.
+ */
+public sealed interface Capability {
+    public data object TextGeneration : Capability
+    public data object Chat : Capability
+    public data object Streaming : Capability
+    public data object StructuredOutput : Capability
+    public data object JsonSchema : Capability
+    public data object Embeddings : Capability
+    public data object ImageInput : Capability
+    public data object AudioInput : Capability
+    public data object ToolCalling : Capability
+    public data object Offline : Capability
+}
+
+/**
+ * Declares a provider's data boundary. This is metadata to inform routing and
+ * UX — not a legal guarantee (see `security-privacy.md`).
+ */
+public data class ProviderPrivacyBoundary(
+    public val isLocal: Boolean,
+    public val isCloud: Boolean,
+    public val vendor: String? = null,
+    public val dataRetention: String? = null,
+    public val trainingUse: String? = null,
+    public val region: String? = null,
+) {
+    public companion object {
+        public fun localDevice(): ProviderPrivacyBoundary =
+            ProviderPrivacyBoundary(isLocal = true, isCloud = false)
+
+        public fun platform(vendor: String): ProviderPrivacyBoundary =
+            ProviderPrivacyBoundary(isLocal = true, isCloud = false, vendor = vendor)
+
+        public fun thirdPartyCloud(vendor: String): ProviderPrivacyBoundary =
+            ProviderPrivacyBoundary(isLocal = false, isCloud = true, vendor = vendor)
+    }
+}
+
+/**
+ * Provider-facing, single-attempt view of a request. The engine derives this
+ * per attempt from an [InferenceRequest] (see [toProviderRequest]).
+ */
+public data class ProviderRequest<Output : Any>(
+    public val key: InferenceKey,
+    public val input: InferenceInput,
+    public val output: OutputSpec<Output>,
+    public val prompt: PromptSpec? = null,
+    public val timeout: TimeoutPolicy = TimeoutPolicy.Default,
+)
+
+/** Derives the provider-facing request for one attempt. */
+public fun <Output : Any> InferenceRequest<Output>.toProviderRequest(): ProviderRequest<Output> =
+    ProviderRequest(
+        key = key,
+        input = input,
+        output = output,
+        prompt = prompt,
+        timeout = timeout,
+    )
+
+/** Capabilities a request needs, derived from its input and output spec. */
+public fun InferenceRequest<*>.requiredCapabilities(): Set<Capability> = buildSet {
+    add(Capability.TextGeneration)
+    if (input is InferenceInput.Messages) add(Capability.Chat)
+    when (output) {
+        is OutputSpec.Json, is OutputSpec.Custom -> add(Capability.StructuredOutput)
+        else -> Unit
+    }
+}
