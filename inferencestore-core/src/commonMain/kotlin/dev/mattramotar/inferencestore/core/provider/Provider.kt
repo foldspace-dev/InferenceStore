@@ -5,6 +5,7 @@ import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.model.OutputSpec
 import dev.mattramotar.inferencestore.core.model.PromptSpec
+import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.policy.TimeoutPolicy
 import kotlinx.coroutines.flow.Flow
 import kotlin.jvm.JvmInline
@@ -115,6 +116,11 @@ public data class ProviderPrivacyBoundary(
  * Provider-facing, single-attempt view of a request. The engine derives this
  * per attempt from an [InferenceRequest] (see [toProviderRequest]).
  *
+ * Carries the request's effective [privacy] so adapters can translate
+ * retention/training requirements into vendor-specific flags. Privacy
+ * *enforcement* — whether this provider may be invoked at all — is done by the
+ * execution controller before the adapter is ever called (see `privacy-model.md`).
+ *
  * The effective timeout is NOT carried here: it lives on [InferenceContext] so
  * there is a single source of truth the engine controls per attempt (which can
  * legitimately differ from the request's policy under retry/deadline scenarios).
@@ -123,6 +129,7 @@ public data class ProviderRequest<Output : Any>(
     public val key: InferenceKey,
     public val input: InferenceInput,
     public val output: OutputSpec<Output>,
+    public val privacy: PrivacyPolicy,
     public val prompt: PromptSpec? = null,
 )
 
@@ -132,6 +139,7 @@ public fun <Output : Any> InferenceRequest<Output>.toProviderRequest(): Provider
         key = key,
         input = input,
         output = output,
+        privacy = privacy,
         prompt = prompt,
     )
 

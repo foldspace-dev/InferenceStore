@@ -37,7 +37,16 @@ public data class Usage(
     public val outputTokens: Int? = null,
     public val totalTokens: Int? = null,
     public val estimatedCostMicros: Long? = null,
-)
+) {
+    init {
+        require(inputTokens == null || inputTokens >= 0) { "inputTokens must be >= 0, was $inputTokens" }
+        require(outputTokens == null || outputTokens >= 0) { "outputTokens must be >= 0, was $outputTokens" }
+        require(totalTokens == null || totalTokens >= 0) { "totalTokens must be >= 0, was $totalTokens" }
+        require(estimatedCostMicros == null || estimatedCostMicros >= 0) {
+            "estimatedCostMicros must be >= 0, was $estimatedCostMicros"
+        }
+    }
+}
 
 /**
  * A provider failure mapped to a stable [category]. Adapters MUST map raw
@@ -52,12 +61,12 @@ public class ProviderError(
     public val cause: Throwable? = null,
 ) {
     /**
-     * Redacts [cause] from the string form so the raw exception (which may carry
-     * secrets) can never leak through logs or traces. The cause remains
-     * available to debug hooks via the property.
+     * Log-safe string form: both [cause] and [message] are omitted, since an
+     * adapter may populate [message] from a raw provider body that could carry
+     * secrets. Both remain available via their properties for debug hooks.
      */
     override fun toString(): String =
-        "ProviderError(category=$category, message=$message, retryAfter=$retryAfter)"
+        "ProviderError(category=$category, retryAfter=$retryAfter)"
 }
 
 /** Stable provider error taxonomy (canonical in `error-fallback-mapping.md`). */

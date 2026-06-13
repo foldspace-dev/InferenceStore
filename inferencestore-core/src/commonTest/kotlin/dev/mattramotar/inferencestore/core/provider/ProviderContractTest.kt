@@ -53,6 +53,17 @@ class ProviderContractTest {
                 )
                 return@flow
             }
+            if (request.output !is OutputSpec.Text) {
+                emit(
+                    ProviderEvent.Failed(
+                        ProviderError(
+                            category = ErrorCategory.CapabilityUnsupported,
+                            message = "echo test provider supports only text output",
+                        ),
+                    ),
+                )
+                return@flow
+            }
             val text = textInput.value
             emit(ProviderEvent.Token(text))
             @Suppress("UNCHECKED_CAST")
