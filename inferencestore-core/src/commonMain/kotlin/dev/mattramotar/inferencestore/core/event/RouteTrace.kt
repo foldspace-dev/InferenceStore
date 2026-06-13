@@ -56,7 +56,8 @@ public data class RouteTrace(
 public data class ProviderAttemptTrace(
     public val providerId: String,
     public val providerKind: ProviderKind,
-    public val outcome: AttemptOutcome,
+    /** Null while the attempt is in flight or was interrupted (e.g. cancellation). */
+    public val outcome: AttemptOutcome? = null,
     public val modelId: String? = null,
     public val errorCategory: ErrorCategory? = null,
     public val firstTokenAtMillis: Long? = null,

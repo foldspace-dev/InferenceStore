@@ -92,4 +92,37 @@ class RouteTraceTest {
         )
         assertEquals(trace, json.decodeFromString<RouteTrace>(json.encodeToString(trace)))
     }
+
+    @Test
+    fun timeoutTrace_goldenJson() {
+        val trace = RouteTrace(
+            requestId = "k",
+            key = "k",
+            finalStatus = FinalStatus.Failed,
+            attempts = listOf(
+                ProviderAttemptTrace("litertlm", ProviderKind.Local, AttemptOutcome.Failed, errorCategory = ErrorCategory.Timeout),
+            ),
+        )
+        assertEquals(
+            """{"requestId":"k","key":"k","finalStatus":"Failed","attempts":[""" +
+                """{"providerId":"litertlm","providerKind":"Local","outcome":"Failed","errorCategory":"Timeout"}]}""",
+            json.encodeToString(trace),
+        )
+    }
+
+    @Test
+    fun cancellationTrace_goldenJson() {
+        // A cancelled request: the in-flight attempt has no terminal outcome.
+        val trace = RouteTrace(
+            requestId = "k",
+            key = "k",
+            finalStatus = FinalStatus.Cancelled,
+            attempts = listOf(ProviderAttemptTrace("litertlm", ProviderKind.Local)),
+        )
+        assertEquals(
+            """{"requestId":"k","key":"k","finalStatus":"Cancelled","attempts":[""" +
+                """{"providerId":"litertlm","providerKind":"Local"}]}""",
+            json.encodeToString(trace),
+        )
+    }
 }
