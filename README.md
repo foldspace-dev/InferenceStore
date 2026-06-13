@@ -89,6 +89,22 @@ templates/
   adr-template.md
 ```
 
+## Module layout (code)
+
+The Gradle/KMP build (OSS-5) is organized as:
+
+| Module | Targets | Purpose |
+|---|---|---|
+| `inferencestore-core` | common, JVM, Android, iOS | Request model, provider contract, streaming API, policy, privacy, events |
+| `inferencestore-testkit` | common, JVM, Android, iOS | Fake providers + route assertions for deterministic tests |
+| `inferencestore-provider-openai-compatible` | common, JVM, Android, iOS | OpenAI-compatible cloud adapter (Ktor) |
+| `inferencestore-provider-litertlm-android` | JVM, Android | First real local adapter (LiteRT-LM) |
+| `samples/notes-summary` | JVM | Private note summarization sample |
+
+Build with `./gradlew build`. The Android target is enabled automatically when an Android SDK is present (`ANDROID_HOME` / `local.properties`); CI builds the full matrix on macOS. Contributors without the Android SDK still build and test the common / JVM / iOS surface.
+
+Version matrix: Kotlin 2.4.0 · Gradle 8.13 · AGP 8.13.2 · coroutines 1.11.0 · serialization 1.11.0 · Ktor 3.5.0.
+
 ## Suggested first public framing
 
 **Working tagline**
