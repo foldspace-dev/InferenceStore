@@ -41,7 +41,19 @@ class ProviderContractTest {
         ): Flow<ProviderEvent<Output>> = flow {
             val meta = ProviderMetadata(id, kind, boundary, modelId = "echo-1")
             emit(ProviderEvent.Started(meta))
-            val text = (request.input as InferenceInput.Text).value
+            val textInput = request.input as? InferenceInput.Text
+            if (textInput == null) {
+                emit(
+                    ProviderEvent.Failed(
+                        ProviderError(
+                            category = ErrorCategory.CapabilityUnsupported,
+                            message = "echo test provider supports only text input",
+                        ),
+                    ),
+                )
+                return@flow
+            }
+            val text = textInput.value
             emit(ProviderEvent.Token(text))
             @Suppress("UNCHECKED_CAST")
             emit(ProviderEvent.Completed(text as Output, rawText = text, metadata = meta))
