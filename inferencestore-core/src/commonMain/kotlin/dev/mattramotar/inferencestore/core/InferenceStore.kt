@@ -7,16 +7,21 @@ import dev.mattramotar.inferencestore.core.event.InferenceResult
 import dev.mattramotar.inferencestore.core.event.ProviderAttemptSummary
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
 import dev.mattramotar.inferencestore.core.provider.ProviderEvent
 import dev.mattramotar.inferencestore.core.provider.toProviderRequest
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.transform
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * The streaming-first entry point.
@@ -66,10 +71,12 @@ internal class SingleProviderInferenceStore(
     private val config: InferenceExecutionConfig,
 ) : InferenceStore {
 
-    override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> {
-        val providerRequest = request.toProviderRequest()
-        val context = InferenceContext(timeout = request.timeout)
-        return flow {
+    override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
+        flow {
+            // Everything is inside the builder so the returned Flow is fully cold:
+            // no provider work (or its errors) happens before a collector starts.
+            val providerRequest = request.toProviderRequest()
+            val context = InferenceContext(timeout = request.timeout)
             val requestId = RequestId(request.key.asString())
             emit(InferenceEvent.Started(requestId, request.key))
             emit(
@@ -78,43 +85,64 @@ internal class SingleProviderInferenceStore(
                     ProviderAttemptSummary(provider.id, attemptNumber = 1),
                 ),
             )
-            provider.stream(providerRequest, context).collect { event ->
-                when (event) {
-                    is ProviderEvent.Started -> Unit
-                    is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
-                    is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
-                    is ProviderEvent.Completed -> {
-                        emit(
-                            InferenceEvent.ProviderAttemptCompleted(
-                                requestId,
-                                ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Succeeded),
-                            ),
-                        )
-                        emit(
-                            InferenceEvent.Done(
-                                requestId,
-                                InferenceResult(request.key, event.output, event.rawText),
-                            ),
-                        )
+            emitAll(
+                provider.stream(providerRequest, context)
+                    .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
+                        when (event) {
+                            is ProviderEvent.Started -> Unit
+                            is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
+                            is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
+                            is ProviderEvent.Completed -> {
+                                emit(
+                                    InferenceEvent.ProviderAttemptCompleted(
+                                        requestId,
+                                        ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Succeeded),
+                                    ),
+                                )
+                                emit(
+                                    InferenceEvent.Done(
+                                        requestId,
+                                        InferenceResult(request.key, event.output, event.rawText),
+                                    ),
+                                )
+                            }
+                            is ProviderEvent.Failed -> {
+                                emit(
+                                    InferenceEvent.ProviderAttemptCompleted(
+                                        requestId,
+                                        ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Failed, event.error.category),
+                                    ),
+                                )
+                                emit(
+                                    InferenceEvent.Failed(
+                                        requestId,
+                                        InferenceError(event.error.category, event.error.message, event.error.cause),
+                                    ),
+                                )
+                            }
+                        }
                     }
-                    is ProviderEvent.Failed -> {
+                    .catch { throwable ->
+                        // Caller cancellation is terminal and must propagate untouched.
+                        if (throwable is CancellationException) throw throwable
+                        // A provider that THROWS instead of emitting Failed is mapped
+                        // defensively to the canonical terminal pair so generate() raises
+                        // InferenceException rather than leaking the raw throwable.
                         emit(
                             InferenceEvent.ProviderAttemptCompleted(
                                 requestId,
-                                ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Failed, event.error.category),
+                                ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Failed, ErrorCategory.Unknown),
                             ),
                         )
                         emit(
                             InferenceEvent.Failed(
                                 requestId,
-                                InferenceError(event.error.category, event.error.message, event.error.cause),
+                                InferenceError(ErrorCategory.Unknown, throwable.message, throwable),
                             ),
                         )
-                    }
-                }
-            }
+                    },
+            )
         }.flowOn(config.providerContext)
-    }
 
     override suspend fun <Output : Any> generate(request: InferenceRequest<Output>): InferenceResult<Output> {
         val terminal = stream(request).first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }

@@ -70,6 +70,35 @@ class StreamingEngineTest {
         }
     }
 
+    private val throwing = object : InferenceProvider {
+        override val id = ProviderId("throws")
+        override val kind = ProviderKind.Cloud
+        override val boundary = ProviderPrivacyBoundary.thirdPartyCloud("test")
+        override suspend fun availability(context: InferenceContext) = ProviderAvailability.Available
+        override suspend fun capabilities(request: InferenceRequest<*>, context: InferenceContext) =
+            CapabilityReport(supported = true, capabilities = setOf(Capability.TextGeneration))
+
+        override fun <Output : Any> stream(
+            request: ProviderRequest<Output>,
+            context: InferenceContext,
+        ): Flow<ProviderEvent<Output>> = flow { throw IllegalStateException("boom") }
+    }
+
+    @Test
+    fun providerThatThrows_isMappedToFailed_andGenerateThrows() = runTest {
+        val store = InferenceStore.single(throwing)
+        val events = store.stream(InferenceRequest.text(key, "hi")).toList()
+
+        val last = events.last()
+        assertTrue(last is InferenceEvent.Failed)
+        assertEquals(ErrorCategory.Unknown, last.error.category)
+        // The canonical terminal pair is still emitted even though the provider threw.
+        assertTrue(events[events.size - 2] is InferenceEvent.ProviderAttemptCompleted)
+
+        val ex = assertFailsWith<InferenceException> { store.generate(InferenceRequest.text(key, "hi")) }
+        assertEquals(ErrorCategory.Unknown, ex.error.category)
+    }
+
     @Test
     fun stream_emitsCanonicalOrder() = runTest {
         val store = InferenceStore.single(echoProvider())
