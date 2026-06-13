@@ -1,0 +1,823 @@
+[
+  {
+    "id": 1,
+    "title": "Create initial repository skeleton and module layout",
+    "labels": [
+      "area/build",
+      "type/task",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "The project needs a KMP repository layout that can support a small stable core plus optional provider, storage, testkit, and Meeseeks modules.",
+    "proposal": "Create Gradle/KMP skeleton with core, testkit, provider-openai-compatible placeholder, samples, docs, and CI-ready build structure.",
+    "acceptance": [
+      "Repository builds with `./gradlew build`.",
+      "`inferencestore-core` compiles for common/JVM/Android/iOS targets.",
+      "`inferencestore-testkit` module exists.",
+      "Placeholder provider module exists but does not affect core dependencies.",
+      "README includes current module map."
+    ],
+    "dependencies": []
+  },
+  {
+    "id": 2,
+    "title": "Define core request and key model",
+    "labels": [
+      "area/core",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Inference requests need a stable shape that captures key, input, output type, privacy, cache, policy, timeout, prompt version, and metadata.",
+    "proposal": "Implement `InferenceRequest`, `InferenceKey`, `InferenceInput`, `OutputSpec`, `PromptSpec`, and basic convenience builders.",
+    "acceptance": [
+      "Text and message inputs are supported.",
+      "Text output spec is supported.",
+      "JSON/typed output spec API is sketched or implemented behind serialization.",
+      "Request has privacy and cache defaults.",
+      "Unit tests cover request creation and equality/fingerprint-relevant fields."
+    ],
+    "dependencies": [
+      1
+    ]
+  },
+  {
+    "id": 3,
+    "title": "Define provider contract and provider metadata",
+    "labels": [
+      "area/provider",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Provider adapters need a common contract for availability, capabilities, streaming execution, and metadata.",
+    "proposal": "Implement `InferenceProvider`, `ProviderId`, `ProviderKind`, `ProviderAvailability`, `Capability`, `CapabilityReport`, `ProviderMetadata`, `ProviderEvent`, and `ProviderError`.",
+    "acceptance": [
+      "Providers can report availability without executing inference.",
+      "Providers can report capability support for a request.",
+      "Provider events support started/token/completed/failed.",
+      "Provider errors map to stable categories.",
+      "No provider-specific dependencies enter core."
+    ],
+    "dependencies": [
+      1,
+      2
+    ]
+  },
+  {
+    "id": 4,
+    "title": "Implement streaming-first InferenceStore API",
+    "labels": [
+      "area/core",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Feature code needs a single API for streaming and non-streaming inference.",
+    "proposal": "Implement `InferenceStore.stream(request)` and `InferenceStore.generate(request)` in core, backed by a simple execution controller.",
+    "acceptance": [
+      "`stream` returns a cold Flow.",
+      "`generate` collects stream and returns final result.",
+      "Cancellation of collection cancels provider execution where possible.",
+      "Event sequence includes Started, ProviderSelected, Token, Done/Failed.",
+      "Unit tests cover success, failure, and cancellation."
+    ],
+    "dependencies": [
+      2,
+      3
+    ]
+  },
+  {
+    "id": 5,
+    "title": "Implement route trace and event model",
+    "labels": [
+      "area/observability",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Users need to know which provider served an inference request and why fallback occurred.",
+    "proposal": "Add `InferenceEvent`, `InferenceResult`, `RouteTrace`, `ProviderAttemptTrace`, and route metadata to all results.",
+    "acceptance": [
+      "Every result includes a `RouteTrace`.",
+      "Every provider attempt is captured with provider ID/kind/model metadata when available.",
+      "Fallback reason can be represented.",
+      "Failed requests include trace information.",
+      "Tests assert trace content."
+    ],
+    "dependencies": [
+      4
+    ]
+  },
+  {
+    "id": 6,
+    "title": "Implement built-in local/cloud policy presets",
+    "labels": [
+      "area/policy",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "The MVP needs simple but useful policies that prove the local/cloud routing model.",
+    "proposal": "Implement `localOnly`, `cloudOnly`, `preferLocalThenCloud`, `preferCloudThenLocal`, and `validateLocalRepairWithCloud`.",
+    "acceptance": [
+      "Policies choose providers based on kind, availability, and capabilities.",
+      "Policy results are deterministic.",
+      "Privacy guardrails cannot be bypassed by policy.",
+      "Tests cover all built-ins.",
+      "Docs show when to use each policy."
+    ],
+    "dependencies": [
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "id": 7,
+    "title": "Add privacy policy model and enforcement",
+    "labels": [
+      "area/security",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Cloud fallback must not happen accidentally for sensitive/local-only requests.",
+    "proposal": "Implement `PrivacyPolicy`, privacy classifications, cloud permission, persistence permission, telemetry permission, and enforcement in execution controller.",
+    "acceptance": [
+      "`LocalOnly` requests never invoke cloud providers.",
+      "Sensitive/default profiles are documented.",
+      "Execution controller enforces privacy independent of policy.",
+      "Tests prove denied providers were not invoked.",
+      "Monitor events are redacted by default."
+    ],
+    "dependencies": [
+      4,
+      6
+    ]
+  },
+  {
+    "id": 8,
+    "title": "Implement output validators and validation-triggered fallback",
+    "labels": [
+      "area/validation",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Local model output may be malformed or inadequate; validation should be able to trigger fallback or repair.",
+    "proposal": "Implement `OutputValidator`, `ValidationResult`, predicate validator helpers, and execution logic for fallback on validation failure.",
+    "acceptance": [
+      "Predicate validators can pass/fail final output.",
+      "Validation result is included in route trace.",
+      "Policy can fall back on validation failure.",
+      "Schema/JSON validation has either initial implementation or RFC stub.",
+      "Tests cover local invalid -> cloud repair."
+    ],
+    "dependencies": [
+      4,
+      5,
+      6
+    ]
+  },
+  {
+    "id": 9,
+    "title": "Create testkit fake provider and route assertions",
+    "labels": [
+      "area/testkit",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M1 Core prototype",
+    "problem": "Developers need deterministic tests without real models or cloud calls.",
+    "proposal": "Implement `FakeInferenceProvider`, scripted responses, failure injection, streaming scripts, and route assertion helpers.",
+    "acceptance": [
+      "Fake provider can stream tokens.",
+      "Fake provider can be unavailable.",
+      "Fake provider can fail with stable error categories.",
+      "Assertions support attempted/fellBackTo/completedWith/didNotAttempt.",
+      "Examples in docs compile."
+    ],
+    "dependencies": [
+      3,
+      5
+    ]
+  },
+  {
+    "id": 10,
+    "title": "Add request fingerprinting",
+    "labels": [
+      "area/cache",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Caching and dedupe require a stable fingerprint that accounts for input, prompt, output, privacy, and policy-relevant fields.",
+    "proposal": "Implement `InferenceFingerprint` and default fingerprinting strategy with extension hooks.",
+    "acceptance": [
+      "Fingerprint includes key, input hash, prompt version, output version, privacy class, and policy version if present.",
+      "Raw input is not stored in the fingerprint.",
+      "Tests cover prompt/input/privacy changes.",
+      "Docs warn about user/account scoping."
+    ],
+    "dependencies": [
+      2,
+      7
+    ]
+  },
+  {
+    "id": 11,
+    "title": "Implement request deduplication",
+    "labels": [
+      "area/core",
+      "area/cache",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Equivalent concurrent requests should not cause duplicate provider invocations when policy allows sharing.",
+    "proposal": "Add in-flight request coalescing keyed by fingerprint and compatible policy/cache settings.",
+    "acceptance": [
+      "Concurrent equivalent requests share one provider call.",
+      "Requests with dedupe disabled do not share.",
+      "Privacy settings can prevent dedupe.",
+      "Cancellation of one collector does not cancel shared work while another collector remains.",
+      "Tests cover success, failure, and cancellation."
+    ],
+    "dependencies": [
+      10
+    ]
+  },
+  {
+    "id": 12,
+    "title": "Define cache and artifact store interfaces",
+    "labels": [
+      "area/cache",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "The core needs cache/source-of-truth-like hooks without overcommitting to a persistent implementation.",
+    "proposal": "Add `InferenceCache`, `InferenceArtifactStore`, `InferenceArtifact`, `CachePolicy`, and `CacheOutcome` interfaces/types.",
+    "acceptance": [
+      "Core can read before provider execution when cache policy allows.",
+      "Core can write successful results when cache policy allows.",
+      "Artifact includes provider/model/trace/validation metadata.",
+      "Privacy policy can disable prompt/output persistence.",
+      "Docs explain why this is not exactly Store SourceOfTruth."
+    ],
+    "dependencies": [
+      10
+    ]
+  },
+  {
+    "id": 13,
+    "title": "Implement in-memory cache",
+    "labels": [
+      "area/cache",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "A small in-memory cache is needed for demos, tests, and repeated UI calls.",
+    "proposal": "Implement `MemoryInferenceCache` with TTL and clear APIs.",
+    "acceptance": [
+      "Cache hit returns artifact without provider call.",
+      "Expired artifact triggers provider call.",
+      "Clear by key works.",
+      "Clear all works.",
+      "Tests cover privacy no-write behavior."
+    ],
+    "dependencies": [
+      12
+    ]
+  },
+  {
+    "id": 14,
+    "title": "Implement monitor hooks",
+    "labels": [
+      "area/observability",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Apps need route, latency, fallback, and validation telemetry.",
+    "proposal": "Add `InferenceMonitor`, `MonitorEvent`, redaction defaults, and execution controller callbacks.",
+    "acceptance": [
+      "Monitor receives request started/completed/failed.",
+      "Monitor receives route selected/provider attempt/fallback/validation events.",
+      "Monitor events contain no raw prompt/output by default.",
+      "Tests cover event order and redaction.",
+      "Docs include monitor example."
+    ],
+    "dependencies": [
+      5,
+      7,
+      8
+    ]
+  },
+  {
+    "id": 15,
+    "title": "Build OpenAI-compatible provider adapter",
+    "labels": [
+      "area/provider",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "The MVP needs a real cloud/remote provider adapter that works with many OpenAI-compatible endpoints.",
+    "proposal": "Implement `inferencestore-provider-openai-compatible` using configurable base URL, API key provider, model name, and streaming support.",
+    "acceptance": [
+      "Adapter supports text/chat request mapping.",
+      "Adapter supports streaming where endpoint supports it.",
+      "Adapter maps rate limit, timeout, network, and server errors.",
+      "Adapter redacts secrets and prompts by default.",
+      "Mock-server tests cover success, streaming, and error mapping."
+    ],
+    "dependencies": [
+      3,
+      4,
+      14
+    ]
+  },
+  {
+    "id": 16,
+    "title": "Create sample: private note summarization",
+    "labels": [
+      "area/samples",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "The project needs a concrete demo that explains the value better than architecture docs.",
+    "proposal": "Build a sample note summarizer using fake local provider, OpenAI-compatible cloud provider, privacy toggle, and route trace display.",
+    "acceptance": [
+      "Sample runs on JVM or Android initially.",
+      "Local success scenario works.",
+      "Local unavailable -> cloud fallback scenario works.",
+      "Private/local-only scenario refuses cloud.",
+      "Route trace is visible in logs or UI."
+    ],
+    "dependencies": [
+      6,
+      7,
+      9,
+      15
+    ]
+  },
+  {
+    "id": 17,
+    "title": "Write Quickstart documentation",
+    "labels": [
+      "area/docs",
+      "type/docs",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Developers need a runnable path from install to first routed inference request.",
+    "proposal": "Create Quickstart with dependency setup, fake provider, OpenAI-compatible provider, policy, streaming, and tests.",
+    "acceptance": [
+      "Quickstart includes Gradle version catalog and Kotlin DSL examples.",
+      "Quickstart shows local-first/cloud-fallback.",
+      "Quickstart shows route trace.",
+      "Quickstart shows privacy local-only test.",
+      "All code snippets compile in sample/test."
+    ],
+    "dependencies": [
+      15,
+      16
+    ]
+  },
+  {
+    "id": 18,
+    "title": "Write provider adapter authoring guide",
+    "labels": [
+      "area/docs",
+      "area/provider",
+      "type/docs",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Runtime maintainers need clear guidance for writing adapters.",
+    "proposal": "Document provider contract, availability/capability mapping, streaming, cancellation, error mapping, privacy, and tests.",
+    "acceptance": [
+      "Guide explains adapter responsibilities and non-responsibilities.",
+      "Guide includes minimal provider implementation.",
+      "Guide includes adapter test checklist.",
+      "Guide explains maturity levels.",
+      "Guide lists known adapter candidates."
+    ],
+    "dependencies": [
+      3,
+      9
+    ]
+  },
+  {
+    "id": 19,
+    "title": "Design JSON/schema structured output support",
+    "labels": [
+      "area/validation",
+      "type/rfc",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Structured output is a major use case, but provider support varies and schema validation can be complex.",
+    "proposal": "Write RFC and initial API for JSON/schema validation, parsing, and repair fallback.",
+    "acceptance": [
+      "RFC covers serializer-based parsing.",
+      "RFC covers schema-constrained providers vs post-hoc validation.",
+      "RFC covers streamed partial JSON as post-MVP.",
+      "Initial API can validate final JSON text.",
+      "Tests demonstrate malformed local JSON -> cloud repair."
+    ],
+    "dependencies": [
+      8
+    ]
+  },
+  {
+    "id": 20,
+    "title": "Add route journal interface",
+    "labels": [
+      "area/reliability",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Production hardening",
+    "problem": "Policies may need recent failure/cooldown information to avoid repeatedly choosing bad providers.",
+    "proposal": "Define `RouteJournal` and in-memory implementation for provider attempt history, failures, and cooldowns.",
+    "acceptance": [
+      "Attempt outcomes can be recorded.",
+      "Recent failures can be queried by provider.",
+      "Cooldown can be represented.",
+      "Policy can optionally consume journal.",
+      "Docs include examples."
+    ],
+    "dependencies": [
+      5,
+      14
+    ]
+  },
+  {
+    "id": 21,
+    "title": "Add timeout and retry semantics",
+    "labels": [
+      "area/reliability",
+      "type/feature",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Provider calls need predictable timeout and retry behavior before fallback.",
+    "proposal": "Add attempt timeout support and stable retry/fallback categories. Keep retry minimal in core; prefer fallback over hidden retries.",
+    "acceptance": [
+      "Request-level timeout works.",
+      "Attempt-level timeout works.",
+      "Timeout maps to stable error/fallback reason.",
+      "Retries are explicit and observable if implemented.",
+      "Tests cover timeout -> fallback."
+    ],
+    "dependencies": [
+      4,
+      6
+    ]
+  },
+  {
+    "id": 22,
+    "title": "Evaluate first local adapter choice",
+    "labels": [
+      "area/research",
+      "area/provider",
+      "type/research",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "The first real local adapter should maximize learning without trapping the project in runtime churn.",
+    "proposal": "Compare Apple Foundation Models, Firebase AI Logic on-device/Android, Llamatik, Cactus, LiteRT-LM, and MLC LLM for first adapter.",
+    "acceptance": [
+      "Comparison matrix includes platform support, licensing, maturity, API stability, streaming, structured output, model management, and KMP fit.",
+      "Recommendation is documented.",
+      "Adapter issue is created for the selected choice.",
+      "Risks and deferred candidates are documented."
+    ],
+    "dependencies": []
+  },
+  {
+    "id": 23,
+    "title": "Prototype Android local/platform adapter",
+    "labels": [
+      "area/provider",
+      "platform/android",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Mobile proof",
+    "problem": "The project needs one real Android local or platform inference path to prove value on-device.",
+    "proposal": "Implement experimental Android adapter based on selected runtime/platform path.",
+    "acceptance": [
+      "Adapter compiles in Android target.",
+      "Availability and capability mapping are implemented.",
+      "Basic text generation works on supported environment or sample stub documents setup.",
+      "Unsupported devices/models return stable availability/capability reasons.",
+      "Adapter is marked experimental."
+    ],
+    "dependencies": [
+      22
+    ]
+  },
+  {
+    "id": 24,
+    "title": "Prototype iOS local/platform adapter",
+    "labels": [
+      "area/provider",
+      "platform/ios",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Mobile proof",
+    "problem": "The project needs an iOS path to prove KMP value beyond Android/JVM.",
+    "proposal": "Implement experimental iOS adapter based on selected platform/runtime path, likely behind expect/actual and Swift interop as needed.",
+    "acceptance": [
+      "Adapter compiles for iOS target.",
+      "Availability/capability mapping is implemented.",
+      "Setup docs explain required OS/device constraints.",
+      "Unsupported devices return stable reasons.",
+      "Adapter is marked experimental."
+    ],
+    "dependencies": [
+      22
+    ]
+  },
+  {
+    "id": 25,
+    "title": "Create cross-platform sample app",
+    "labels": [
+      "area/samples",
+      "platform/android",
+      "platform/ios",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Mobile proof",
+    "problem": "A KMP library needs a mobile sample that demonstrates shared request/policy/test code and platform-specific providers.",
+    "proposal": "Build a minimal Android/iOS sample using common inference code and platform-specific provider modules.",
+    "acceptance": [
+      "Common code defines request and policy.",
+      "Android provider configured in Android app.",
+      "iOS provider configured in iOS app.",
+      "Route trace shows actual provider used.",
+      "Docs explain platform differences."
+    ],
+    "dependencies": [
+      16,
+      23,
+      24
+    ]
+  },
+  {
+    "id": 26,
+    "title": "Add SQLDelight artifact store prototype",
+    "labels": [
+      "area/storage",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Production hardening",
+    "problem": "Early adopters may need persistent artifacts and route traces.",
+    "proposal": "Implement SQLDelight-backed artifact store and route journal prototype.",
+    "acceptance": [
+      "Artifact records persist across process restart.",
+      "Route attempts persist.",
+      "Privacy no-prompt/no-output persistence is honored.",
+      "Schema migrations are tested.",
+      "Docs include retention guidance."
+    ],
+    "dependencies": [
+      12,
+      20
+    ]
+  },
+  {
+    "id": 27,
+    "title": "Add OpenTelemetry monitor exporter",
+    "labels": [
+      "area/observability",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M3 Production hardening",
+    "problem": "Production teams need to export inference route metrics to their observability stack.",
+    "proposal": "Implement optional OpenTelemetry exporter module for route spans and metrics.",
+    "acceptance": [
+      "Request route is represented as span(s).",
+      "Provider attempts include attributes.",
+      "Fallback reasons are exported.",
+      "Prompts/outputs are redacted by default.",
+      "Docs include setup and attribute list."
+    ],
+    "dependencies": [
+      14
+    ]
+  },
+  {
+    "id": 28,
+    "title": "Create Meeseeks provider inventory refresh worker",
+    "labels": [
+      "area/meeseeks",
+      "type/feature",
+      "priority/p2"
+    ],
+    "milestone": "M4 Meeseeks lifecycle",
+    "problem": "Foreground route planning benefits from cached provider/model availability, but probing every time can be expensive.",
+    "proposal": "Add optional Meeseeks worker that refreshes provider inventory in the background.",
+    "acceptance": [
+      "Worker payload supports provider IDs.",
+      "Worker calls provider availability/capability probes.",
+      "Worker writes provider inventory records.",
+      "Scheduling helper is documented.",
+      "Tests use fake providers and fake Meeseeks/runtime where possible."
+    ],
+    "dependencies": [
+      20
+    ]
+  },
+  {
+    "id": 29,
+    "title": "Create Meeseeks model warmup worker",
+    "labels": [
+      "area/meeseeks",
+      "type/feature",
+      "priority/p3"
+    ],
+    "milestone": "M4 Meeseeks lifecycle",
+    "problem": "Local models may have high first-token latency unless warmed before use.",
+    "proposal": "Define optional provider lifecycle interface and Meeseeks worker for model warmup.",
+    "acceptance": [
+      "Provider lifecycle interface includes warmup if supported.",
+      "Worker checks preconditions before warmup.",
+      "Warmup failures are recorded without crashing.",
+      "Docs include scheduling example.",
+      "Adapter support is optional."
+    ],
+    "dependencies": [
+      28
+    ]
+  },
+  {
+    "id": 30,
+    "title": "Create Meeseeks telemetry upload worker",
+    "labels": [
+      "area/meeseeks",
+      "area/observability",
+      "type/feature",
+      "priority/p3"
+    ],
+    "milestone": "M4 Meeseeks lifecycle",
+    "problem": "Apps may want to batch and retry telemetry upload without impacting foreground inference.",
+    "proposal": "Add optional worker that uploads redacted route telemetry batches.",
+    "acceptance": [
+      "Telemetry payload excludes raw prompt/output by default.",
+      "Worker retries transient upload failures.",
+      "Worker respects telemetry permission.",
+      "Docs include privacy notes.",
+      "Tests cover redaction."
+    ],
+    "dependencies": [
+      14,
+      28
+    ]
+  },
+  {
+    "id": 31,
+    "title": "Write security and privacy guide",
+    "labels": [
+      "area/docs",
+      "area/security",
+      "type/docs",
+      "priority/p1"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Users need clear guidance on privacy policies, cloud fallback, logging, persistence, and telemetry.",
+    "proposal": "Write a security/privacy guide with defaults, examples, test assertions, and adapter checklist.",
+    "acceptance": [
+      "Guide explains privacy profiles.",
+      "Guide shows local-only cloud denial.",
+      "Guide explains redaction defaults.",
+      "Guide includes cache persistence advice.",
+      "Guide includes adapter checklist."
+    ],
+    "dependencies": [
+      7,
+      14
+    ]
+  },
+  {
+    "id": 32,
+    "title": "Create competitive landscape document",
+    "labels": [
+      "area/research",
+      "type/docs",
+      "priority/p2"
+    ],
+    "milestone": "M0 Validation",
+    "problem": "The project needs a clear explanation of why it exists alongside Firebase AI Logic, Apple Foundation Models, LiteRT-LM, ExecuTorch, MLC, Llamatik, and Cactus.",
+    "proposal": "Write comparison matrix and positioning doc focused on orchestration vs runtime execution.",
+    "acceptance": [
+      "Matrix includes runtime/provider projects and their strengths.",
+      "Document identifies overlap and differentiation.",
+      "Document avoids inaccurate claims.",
+      "README links to the document.",
+      "Sources are cited with links."
+    ],
+    "dependencies": []
+  },
+  {
+    "id": 33,
+    "title": "Open public RFC discussion for core API",
+    "labels": [
+      "area/community",
+      "type/rfc",
+      "priority/p1"
+    ],
+    "milestone": "M0 Validation",
+    "problem": "The API should be pressure-tested before implementation hardens.",
+    "proposal": "Publish RFC-0001 and RFC-0002 as GitHub discussions and solicit feedback from Store, KMP, and local inference communities.",
+    "acceptance": [
+      "RFC discussion created.",
+      "Questions are explicit.",
+      "Feedback is summarized.",
+      "Decisions are captured in ADRs.",
+      "Follow-up issues are created."
+    ],
+    "dependencies": []
+  },
+  {
+    "id": 34,
+    "title": "Build validation demo with fake providers",
+    "labels": [
+      "area/demo",
+      "type/feature",
+      "priority/p0"
+    ],
+    "milestone": "M0 Validation",
+    "problem": "Potential users need to see the value without waiting for real provider adapters.",
+    "proposal": "Create runnable JVM/CLI demo using fake local/cloud providers and three route scenarios.",
+    "acceptance": [
+      "Demo shows local success.",
+      "Demo shows local unavailable -> cloud fallback.",
+      "Demo shows local schema invalid -> cloud repair.",
+      "Demo shows local-only privacy denial.",
+      "Demo prints route trace."
+    ],
+    "dependencies": [
+      4,
+      6,
+      8,
+      9
+    ]
+  },
+  {
+    "id": 35,
+    "title": "Set up release automation and snapshot publishing",
+    "labels": [
+      "area/build",
+      "type/task",
+      "priority/p2"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "Early adopters need reproducible artifacts and snapshots.",
+    "proposal": "Configure CI, signing/publishing path, changelog, versioning, and release notes.",
+    "acceptance": [
+      "Snapshots can be published.",
+      "Release checklist is documented.",
+      "Changelog exists.",
+      "Version catalog examples use published coordinates.",
+      "CI validates target matrix."
+    ],
+    "dependencies": [
+      1
+    ]
+  },
+  {
+    "id": 36,
+    "title": "Create documentation site skeleton",
+    "labels": [
+      "area/docs",
+      "type/task",
+      "priority/p2"
+    ],
+    "milestone": "M2 Alpha",
+    "problem": "The project needs docs similar in quality and navigability to Store/Meeseeks.",
+    "proposal": "Set up docs site skeleton with sections for get started, concepts, guides, adapters, testing, and security.",
+    "acceptance": [
+      "Docs IA is committed.",
+      "Quickstart page exists.",
+      "Concept pages exist for store, provider, policy, validator, artifact store, monitor.",
+      "Adapter guide exists.",
+      "Docs can be built locally."
+    ],
+    "dependencies": [
+      17,
+      18,
+      31
+    ]
+  }
+]

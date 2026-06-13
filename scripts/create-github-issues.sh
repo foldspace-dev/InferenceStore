@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Usage:
+#   GH_REPO=owner/repo ./scripts/create-github-issues.sh
+# Requires: gh CLI authenticated and labels/milestones created as desired.
+
+: "${GH_REPO:?Set GH_REPO=owner/repo}"
+
+gh issue create --repo "$GH_REPO" --title "Create initial repository skeleton and module layout" --body-file "docs/issues/001-create-initial-repository-skeleton-and-module-layout.md" --label "area/build,type/task,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Define core request and key model" --body-file "docs/issues/002-define-core-request-and-key-model.md" --label "area/core,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Define provider contract and provider metadata" --body-file "docs/issues/003-define-provider-contract-and-provider-metadata.md" --label "area/provider,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Implement streaming-first InferenceStore API" --body-file "docs/issues/004-implement-streaming-first-inferencestore-api.md" --label "area/core,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Implement route trace and event model" --body-file "docs/issues/005-implement-route-trace-and-event-model.md" --label "area/observability,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Implement built-in local/cloud policy presets" --body-file "docs/issues/006-implement-built-in-local-cloud-policy-presets.md" --label "area/policy,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Add privacy policy model and enforcement" --body-file "docs/issues/007-add-privacy-policy-model-and-enforcement.md" --label "area/security,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Implement output validators and validation-triggered fallback" --body-file "docs/issues/008-implement-output-validators-and-validation-triggered-fallback.md" --label "area/validation,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Create testkit fake provider and route assertions" --body-file "docs/issues/009-create-testkit-fake-provider-and-route-assertions.md" --label "area/testkit,type/feature,priority/p0" --milestone "M1 Core prototype" || true
+gh issue create --repo "$GH_REPO" --title "Add request fingerprinting" --body-file "docs/issues/010-add-request-fingerprinting.md" --label "area/cache,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Implement request deduplication" --body-file "docs/issues/011-implement-request-deduplication.md" --label "area/core,area/cache,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Define cache and artifact store interfaces" --body-file "docs/issues/012-define-cache-and-artifact-store-interfaces.md" --label "area/cache,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Implement in-memory cache" --body-file "docs/issues/013-implement-in-memory-cache.md" --label "area/cache,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Implement monitor hooks" --body-file "docs/issues/014-implement-monitor-hooks.md" --label "area/observability,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Build OpenAI-compatible provider adapter" --body-file "docs/issues/015-build-openai-compatible-provider-adapter.md" --label "area/provider,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Create sample: private note summarization" --body-file "docs/issues/016-create-sample-private-note-summarization.md" --label "area/samples,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Write Quickstart documentation" --body-file "docs/issues/017-write-quickstart-documentation.md" --label "area/docs,type/docs,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Write provider adapter authoring guide" --body-file "docs/issues/018-write-provider-adapter-authoring-guide.md" --label "area/docs,area/provider,type/docs,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Design JSON/schema structured output support" --body-file "docs/issues/019-design-json-schema-structured-output-support.md" --label "area/validation,type/rfc,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Add route journal interface" --body-file "docs/issues/020-add-route-journal-interface.md" --label "area/reliability,type/feature,priority/p2" --milestone "M3 Production hardening" || true
+gh issue create --repo "$GH_REPO" --title "Add timeout and retry semantics" --body-file "docs/issues/021-add-timeout-and-retry-semantics.md" --label "area/reliability,type/feature,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Evaluate first local adapter choice" --body-file "docs/issues/022-evaluate-first-local-adapter-choice.md" --label "area/research,area/provider,type/research,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Prototype Android local/platform adapter" --body-file "docs/issues/023-prototype-android-local-platform-adapter.md" --label "area/provider,platform/android,type/feature,priority/p2" --milestone "M3 Mobile proof" || true
+gh issue create --repo "$GH_REPO" --title "Prototype iOS local/platform adapter" --body-file "docs/issues/024-prototype-ios-local-platform-adapter.md" --label "area/provider,platform/ios,type/feature,priority/p2" --milestone "M3 Mobile proof" || true
+gh issue create --repo "$GH_REPO" --title "Create cross-platform sample app" --body-file "docs/issues/025-create-cross-platform-sample-app.md" --label "area/samples,platform/android,platform/ios,type/feature,priority/p2" --milestone "M3 Mobile proof" || true
+gh issue create --repo "$GH_REPO" --title "Add SQLDelight artifact store prototype" --body-file "docs/issues/026-add-sqldelight-artifact-store-prototype.md" --label "area/storage,type/feature,priority/p2" --milestone "M3 Production hardening" || true
+gh issue create --repo "$GH_REPO" --title "Add OpenTelemetry monitor exporter" --body-file "docs/issues/027-add-opentelemetry-monitor-exporter.md" --label "area/observability,type/feature,priority/p2" --milestone "M3 Production hardening" || true
+gh issue create --repo "$GH_REPO" --title "Create Meeseeks provider inventory refresh worker" --body-file "docs/issues/028-create-meeseeks-provider-inventory-refresh-worker.md" --label "area/meeseeks,type/feature,priority/p2" --milestone "M4 Meeseeks lifecycle" || true
+gh issue create --repo "$GH_REPO" --title "Create Meeseeks model warmup worker" --body-file "docs/issues/029-create-meeseeks-model-warmup-worker.md" --label "area/meeseeks,type/feature,priority/p3" --milestone "M4 Meeseeks lifecycle" || true
+gh issue create --repo "$GH_REPO" --title "Create Meeseeks telemetry upload worker" --body-file "docs/issues/030-create-meeseeks-telemetry-upload-worker.md" --label "area/meeseeks,area/observability,type/feature,priority/p3" --milestone "M4 Meeseeks lifecycle" || true
+gh issue create --repo "$GH_REPO" --title "Write security and privacy guide" --body-file "docs/issues/031-write-security-and-privacy-guide.md" --label "area/docs,area/security,type/docs,priority/p1" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Create competitive landscape document" --body-file "docs/issues/032-create-competitive-landscape-document.md" --label "area/research,type/docs,priority/p2" --milestone "M0 Validation" || true
+gh issue create --repo "$GH_REPO" --title "Open public RFC discussion for core API" --body-file "docs/issues/033-open-public-rfc-discussion-for-core-api.md" --label "area/community,type/rfc,priority/p1" --milestone "M0 Validation" || true
+gh issue create --repo "$GH_REPO" --title "Build validation demo with fake providers" --body-file "docs/issues/034-build-validation-demo-with-fake-providers.md" --label "area/demo,type/feature,priority/p0" --milestone "M0 Validation" || true
+gh issue create --repo "$GH_REPO" --title "Set up release automation and snapshot publishing" --body-file "docs/issues/035-set-up-release-automation-and-snapshot-publishing.md" --label "area/build,type/task,priority/p2" --milestone "M2 Alpha" || true
+gh issue create --repo "$GH_REPO" --title "Create documentation site skeleton" --body-file "docs/issues/036-create-documentation-site-skeleton.md" --label "area/docs,type/task,priority/p2" --milestone "M2 Alpha" || true
