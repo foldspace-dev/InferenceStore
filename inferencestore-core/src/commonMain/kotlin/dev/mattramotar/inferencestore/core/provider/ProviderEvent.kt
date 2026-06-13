@@ -45,12 +45,20 @@ public data class Usage(
  * OSS-16 (`error-fallback-mapping.md`). The raw [cause] is preserved for debug
  * hooks but must never be logged or traced with secrets.
  */
-public data class ProviderError(
+public class ProviderError(
     public val category: ErrorCategory,
     public val message: String? = null,
     public val retryAfter: Duration? = null,
     public val cause: Throwable? = null,
-)
+) {
+    /**
+     * Redacts [cause] from the string form so the raw exception (which may carry
+     * secrets) can never leak through logs or traces. The cause remains
+     * available to debug hooks via the property.
+     */
+    override fun toString(): String =
+        "ProviderError(category=$category, message=$message, retryAfter=$retryAfter)"
+}
 
 /** Stable provider error taxonomy (canonical in `error-fallback-mapping.md`). */
 public enum class ErrorCategory {

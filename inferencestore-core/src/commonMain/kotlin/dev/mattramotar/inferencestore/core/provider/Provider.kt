@@ -114,13 +114,16 @@ public data class ProviderPrivacyBoundary(
 /**
  * Provider-facing, single-attempt view of a request. The engine derives this
  * per attempt from an [InferenceRequest] (see [toProviderRequest]).
+ *
+ * The effective timeout is NOT carried here: it lives on [InferenceContext] so
+ * there is a single source of truth the engine controls per attempt (which can
+ * legitimately differ from the request's policy under retry/deadline scenarios).
  */
 public data class ProviderRequest<Output : Any>(
     public val key: InferenceKey,
     public val input: InferenceInput,
     public val output: OutputSpec<Output>,
     public val prompt: PromptSpec? = null,
-    public val timeout: TimeoutPolicy = TimeoutPolicy.Default,
 )
 
 /** Derives the provider-facing request for one attempt. */
@@ -130,7 +133,6 @@ public fun <Output : Any> InferenceRequest<Output>.toProviderRequest(): Provider
         input = input,
         output = output,
         prompt = prompt,
-        timeout = timeout,
     )
 
 /** Capabilities a request needs, derived from its input and output spec. */
