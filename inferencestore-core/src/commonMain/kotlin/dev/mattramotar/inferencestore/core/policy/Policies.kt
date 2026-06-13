@@ -11,10 +11,17 @@ import kotlin.time.Duration
  * carries the [privacyClass] so the request model is type-complete.
  */
 public data class PrivacyPolicy(
-    public val privacyClass: PrivacyClass = PrivacyClass.Public,
+    public val privacyClass: PrivacyClass = PrivacyClass.Personal,
 ) {
     public companion object {
-        public val Default: PrivacyPolicy = PrivacyPolicy()
+        /**
+         * Strict default per `privacy-model.md`: `Personal` data, cloud denied,
+         * no prompt/output persistence. Full enforcement lands in OSS-15.
+         */
+        public val Default: PrivacyPolicy = PrivacyPolicy(PrivacyClass.Personal)
+
+        /** Convenience for harmless public/demo content; production should be explicit. */
+        public fun publicData(): PrivacyPolicy = PrivacyPolicy(PrivacyClass.Public)
     }
 }
 
@@ -29,6 +36,15 @@ public data class TimeoutPolicy(
     public val requestTimeout: Duration? = null,
     public val attemptTimeout: Duration? = null,
 ) {
+    init {
+        require(requestTimeout == null || requestTimeout > Duration.ZERO) {
+            "requestTimeout must be positive, was $requestTimeout"
+        }
+        require(attemptTimeout == null || attemptTimeout > Duration.ZERO) {
+            "attemptTimeout must be positive, was $attemptTimeout"
+        }
+    }
+
     public companion object {
         public val Default: TimeoutPolicy = TimeoutPolicy()
     }
@@ -41,6 +57,12 @@ public data class TimeoutPolicy(
 public data class RetryPolicy(
     public val maxRetriesPerAttempt: Int = 0,
 ) {
+    init {
+        require(maxRetriesPerAttempt >= 0) {
+            "maxRetriesPerAttempt must be non-negative, was $maxRetriesPerAttempt"
+        }
+    }
+
     public companion object {
         public val Default: RetryPolicy = RetryPolicy()
     }

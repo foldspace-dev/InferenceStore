@@ -2,11 +2,15 @@ package dev.mattramotar.inferencestore.core.model
 
 import dev.mattramotar.inferencestore.core.policy.PrivacyClass
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
+import dev.mattramotar.inferencestore.core.policy.RetryPolicy
+import dev.mattramotar.inferencestore.core.policy.TimeoutPolicy
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class InferenceRequestTest {
 
@@ -66,8 +70,28 @@ class InferenceRequestTest {
     @Test
     fun defaults_areCanonical() {
         val req = InferenceRequest.text(key, "hi")
+        assertEquals(PrivacyClass.Personal, req.privacy.privacyClass) // strict default per privacy-model.md
         assertEquals(0, req.retry.maxRetriesPerAttempt)
         assertEquals(false, req.cache.allowDedupe)
         assertEquals(null, req.policy)
+    }
+
+    @Test
+    fun key_escapesDelimitersToAvoidCollisions() {
+        assertNotEquals(
+            InferenceKey("a/b", "c").asString(),
+            InferenceKey("a", "b/c").asString(),
+        )
+        assertNotEquals(
+            InferenceKey("ns", "id@v").asString(),
+            InferenceKey("ns", "id", version = "v").asString(),
+        )
+    }
+
+    @Test
+    fun policies_rejectInvalidValues() {
+        assertFailsWith<IllegalArgumentException> { RetryPolicy(maxRetriesPerAttempt = -1) }
+        assertFailsWith<IllegalArgumentException> { TimeoutPolicy(requestTimeout = (-1).seconds) }
+        assertFailsWith<IllegalArgumentException> { TimeoutPolicy(attemptTimeout = 0.seconds) }
     }
 }

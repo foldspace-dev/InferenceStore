@@ -21,14 +21,22 @@ public data class InferenceKey(
     public val id: String,
     public val version: String? = null,
 ) {
-    /** Stable, human-readable rendering used as a fingerprint input. */
-    public fun asString(): String = buildString {
-        append(namespace)
-        append('/')
-        append(id)
-        if (version != null) {
-            append('@')
-            append(version)
+    /**
+     * Stable, collision-free rendering used as a fingerprint input. Delimiters
+     * (`\`, `/`, `@`) in each component are escaped so that distinct keys can
+     * never collapse to the same string (e.g. `("a/b","c")` vs `("a","b/c")`).
+     */
+    public fun asString(): String {
+        fun esc(s: String): String =
+            s.replace("\\", "\\\\").replace("/", "\\/").replace("@", "\\@")
+        return buildString {
+            append(esc(namespace))
+            append('/')
+            append(esc(id))
+            if (version != null) {
+                append('@')
+                append(esc(version))
+            }
         }
     }
 }
