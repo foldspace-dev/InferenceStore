@@ -43,6 +43,7 @@ sealed interface MonitorEvent {
     data class ProviderAttemptStarted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : MonitorEvent
     data class TokenEmitted(val requestId: RequestId, val count: Int) : MonitorEvent // no token text by default
     data class FallbackStarted(val requestId: RequestId, val reason: FallbackReason) : MonitorEvent
+    data class RetryScheduled(val requestId: RequestId, val provider: ProviderId, val attemptNumber: Int, val delay: Duration) : MonitorEvent
     data class ValidationCompleted(val requestId: RequestId, val result: ValidationResult) : MonitorEvent
     data class ProviderAttemptCompleted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : MonitorEvent
     data class RequestCompleted(val requestId: RequestId, val summary: RequestSummary) : MonitorEvent

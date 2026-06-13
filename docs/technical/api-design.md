@@ -132,6 +132,7 @@ sealed interface InferenceEvent<out Output : Any> {
     data class ValidationCompleted(val requestId: RequestId, val result: ValidationResult) : InferenceEvent<Nothing>
     data class ProviderAttemptCompleted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : InferenceEvent<Nothing>
     data class FallbackStarted(val requestId: RequestId, val reason: FallbackReason, val next: ProviderId?) : InferenceEvent<Nothing>
+    data class RetryScheduled(val requestId: RequestId, val provider: ProviderId, val attemptNumber: Int, val delay: Duration) : InferenceEvent<Nothing>
     data class ArtifactStored(val requestId: RequestId, val outcome: ArtifactWriteOutcome) : InferenceEvent<Nothing>
     data class Done<Output : Any>(val requestId: RequestId, val result: InferenceResult<Output>) : InferenceEvent<Output>
     data class Failed(val requestId: RequestId, val error: InferenceError, val trace: RouteTrace) : InferenceEvent<Nothing>

@@ -31,6 +31,8 @@ enum class ErrorCategory {
 
 Raw exceptions are preserved internally and may be available to debug hooks, but routing operates on stable categories.
 
+The `Fallback reason` column below uses `FallbackReason`, the canonical enum defined in `event-model.md`. This document maps `ErrorCategory` to `FallbackReason`; it does not define a parallel reason vocabulary.
+
 ## Default mapping table
 
 | Error category | Same-provider retry default | Fallback default | Terminal default | Fallback reason | Notes |

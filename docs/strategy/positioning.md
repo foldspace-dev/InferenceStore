@@ -166,6 +166,7 @@ val answer = inferenceStore.generate(
     request = InferenceRequest.text(
         key = InferenceKey("notes.summary", note.id),
         input = note.body,
+        output = Summary.serializer(),
         privacy = PrivacyPolicy.personal(
             cloud = CloudPermission.ApprovedProviders(setOf(ProviderId("cloud")))
         )

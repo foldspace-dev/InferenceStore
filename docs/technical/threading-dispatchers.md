@@ -88,6 +88,7 @@ Rules:
 3. `CancellationException` maps to `InferenceError.Cancelled`, not `Timeout` or `TransientProviderError`.
 4. Core must not fallback after caller cancellation.
 5. Cleanup errors after cancellation may be logged as debug metadata but must not replace the cancellation result.
+6. The cancelling collector's `Flow` terminates with `CancellationException`; core does not deliver a terminal `Failed` event to it. The route trace and monitor still record `Cancelled` when observable (see `event-model.md`).
 
 ## Timeout is not cancellation
 

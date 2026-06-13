@@ -71,6 +71,17 @@ Created or rewrote:
 
 These documents define main-safety, dispatcher neutrality, local/native blocking rules, cancellation, dedupe fan-out, stable error categories, retry/fallback defaults, timeout layers, budget accounting, and canonical route events.
 
+### 6. Event vocabulary reconciled (follow-up)
+
+After writing the four contracts above, the event/error/fallback vocabulary still drifted between them. Reconciled so `event-model.md` is the single authority:
+
+- `FallbackReason` and `AttemptOutcome` enums and `ProviderAttemptSummary` are now defined once in `event-model.md`; `error-fallback-mapping.md`, `timeout-retry-policy.md`, and `observability-evals.md` reference them instead of implying their own.
+- Removed the non-existent `ProviderAttemptFailed` event from `timeout-retry-policy.md`; a failed attempt is `ProviderAttemptCompleted(outcome = Failed)` everywhere.
+- Resolved `RetryScheduled`: same-provider retry is an MVP capability, disabled by default. `RetryScheduled` is now a first-class `InferenceEvent` (and `MonitorEvent`) in `event-model.md`, `api-design.md`, and `observability-evals.md`.
+- Completed the `InferenceEvent` → `MonitorEvent` projection table in `event-model.md` (every event mapped; `Partial`/`ArtifactStored` explicitly not projected).
+- Made cancellation representation unambiguous and cross-referenced it between `event-model.md` and `threading-dispatchers.md`.
+- Fixed a stale `InferenceRequest.text(...)` sample in `positioning.md` (missing required `output`).
+
 ## Backlog changes
 
 Issue count increased from 36 to 40.

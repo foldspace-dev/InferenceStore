@@ -25,13 +25,49 @@ sealed interface InferenceEvent<out Output : Any> {
     data class ValidationCompleted(val requestId: RequestId, val result: ValidationResult) : InferenceEvent<Nothing>
     data class ProviderAttemptCompleted(val requestId: RequestId, val attempt: ProviderAttemptSummary) : InferenceEvent<Nothing>
     data class FallbackStarted(val requestId: RequestId, val reason: FallbackReason, val next: ProviderId?) : InferenceEvent<Nothing>
+    data class RetryScheduled(val requestId: RequestId, val provider: ProviderId, val attemptNumber: Int, val delay: Duration) : InferenceEvent<Nothing>
     data class ArtifactStored(val requestId: RequestId, val outcome: ArtifactWriteOutcome) : InferenceEvent<Nothing>
     data class Done<Output : Any>(val requestId: RequestId, val result: InferenceResult<Output>) : InferenceEvent<Output>
     data class Failed(val requestId: RequestId, val error: InferenceError, val trace: RouteTrace) : InferenceEvent<Nothing>
 }
 ```
 
-`Cancelled` is represented as `Failed(error.category = Cancelled)` unless Kotlin Flow cancellation prevents terminal emission to the cancelling collector. Monitor/trace must still record cancellation when observable.
+## Shared event vocabulary
+
+`FallbackReason`, `AttemptOutcome`, and the provider-attempt summary are defined here and referenced — not redefined — by `error-fallback-mapping.md`, `timeout-retry-policy.md`, and `observability-evals.md`.
+
+```kotlin
+enum class FallbackReason {
+    ProviderUnavailable,
+    CapabilityUnsupported,
+    PolicyViolation,
+    Timeout,
+    RateLimited,
+    TransientError,
+    PermanentError,
+    ValidatorRejected,
+    SchemaInvalid,
+    OutputParserFailed,
+    Unknown
+}
+
+enum class AttemptOutcome { Succeeded, Failed, RejectedByPolicy }
+
+data class ProviderAttemptSummary(
+    val provider: ProviderId,
+    val attemptNumber: Int,
+    val outcome: AttemptOutcome,
+    val error: ErrorCategory? = null,   // present when outcome = Failed
+    val retryable: Boolean = false,
+    val retryAfter: Duration? = null
+)
+```
+
+`ErrorCategory` is the stable taxonomy defined in `error-fallback-mapping.md`. A failed attempt is always carried by `ProviderAttemptCompleted` with `outcome = Failed`; there is no separate `ProviderAttemptFailed` event.
+
+## Cancellation representation
+
+Caller cancellation terminates the cancelling collector's `Flow` with `CancellationException`; core does not deliver a terminal `Failed` event to that collector, because Kotlin Flow does not permit emission after cancellation. The route trace and `InferenceMonitor` still record `Cancelled` when observable. For deduped streams, cancelling one joined collector does not cancel upstream while another remains (see `threading-dispatchers.md`).
 
 ## Successful single-provider order
 
@@ -97,24 +133,36 @@ See `timeout-retry-policy.md` for timeout-specific variants.
 
 ## Retry events
 
-Retry is not a separate stream event in MVP unless same-provider retry is enabled. When enabled, retries are represented as:
+Same-provider retry is an MVP capability but is disabled by default (`RetryPolicy.maxRetriesPerAttempt = 0`; prefer fallback over hidden retries — see `timeout-retry-policy.md`). When retry is enabled for an error category, each retry is an explicit, observable event:
 
 ```text
-ProviderAttemptCompleted(failed, retryable = true)
-RetryScheduled(provider, delay)
+ProviderAttemptCompleted(outcome = Failed, retryable = true)
+RetryScheduled(provider, attemptNumber = n + 1, delay)
 ProviderAttemptStarted(provider, attemptNumber = n + 1)
 ```
 
-If `RetryScheduled` is added to public API, update this source-of-truth document first.
+`RetryScheduled` is part of the public `InferenceEvent` API (above) and is projected to a redacted `MonitorEvent.RetryScheduled`.
 
 ## Monitor projection
 
-`InferenceMonitor` receives redacted projections of these same events. It must not define a separate lifecycle. For example:
+`InferenceMonitor` receives redacted projections of these same stream events and must not define a separate lifecycle. The `MonitorEvent` types are defined in `observability-evals.md`. Every stream event maps as follows:
 
-- `InferenceEvent.ProviderAttemptStarted` -> `MonitorEvent.ProviderAttemptStarted`
-- `InferenceEvent.Token` -> `MonitorEvent.TokenEmitted` without token text by default
-- `InferenceEvent.Done` -> `MonitorEvent.RequestCompleted`
-- `InferenceEvent.Failed` -> `MonitorEvent.RequestFailed`
+| Stream `InferenceEvent` | `MonitorEvent` | Notes |
+|---|---|---|
+| `Started` | `RequestStarted` | |
+| `CacheChecked` | `CacheChecked` | |
+| `ProvidersEvaluated` | `ProvidersEvaluated` | |
+| `RouteSelected` | `RouteSelected` | |
+| `ProviderAttemptStarted` | `ProviderAttemptStarted` | |
+| `Token` | `TokenEmitted` | count only, no token text by default |
+| `Partial` | — | not projected; typed content is redacted |
+| `ValidationCompleted` | `ValidationCompleted` | |
+| `ProviderAttemptCompleted` | `ProviderAttemptCompleted` | carries `AttemptOutcome` |
+| `FallbackStarted` | `FallbackStarted` | |
+| `RetryScheduled` | `RetryScheduled` | |
+| `ArtifactStored` | — | not a distinct monitor event; captured in `RouteTrace` and `RequestCompleted` |
+| `Done` | `RequestCompleted` | |
+| `Failed` | `RequestFailed` | includes `Cancelled` when observable |
 
 ## Golden trace requirements
 

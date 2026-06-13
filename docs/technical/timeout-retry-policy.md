@@ -81,26 +81,29 @@ Backoff must use the testkit virtual clock in tests. Do not sleep real time in u
 
 ## Event sequence
 
+Event names and `FallbackReason` are canonical in `event-model.md`. A failed attempt is `ProviderAttemptCompleted(outcome = Failed)` — there is no `ProviderAttemptFailed` event.
+
 Attempt timeout with fallback:
 
 ```text
 Started
 RouteSelected
 ProviderAttemptStarted(local)
-ProviderAttemptFailed(local, Timeout.AttemptTimeout)
+ProviderAttemptCompleted(local, outcome = Failed, error = Timeout/AttemptTimeout)
 FallbackStarted(reason = Timeout, next = cloud)
 ProviderAttemptStarted(cloud)
 ValidationCompleted(pass)
+ProviderAttemptCompleted(cloud, outcome = Succeeded)
 Done
 ```
 
-Rate limit with explicit retry:
+Rate limit with explicit retry (retry is opt-in; disabled by default):
 
 ```text
-ProviderAttemptStarted(cloud, attempt = 1)
-ProviderAttemptFailed(cloud, RateLimited, retryAfter = 2s)
-RetryScheduled(cloud, delay = 2s)
-ProviderAttemptStarted(cloud, attempt = 2)
+ProviderAttemptStarted(cloud, attemptNumber = 1)
+ProviderAttemptCompleted(cloud, outcome = Failed, error = RateLimited, retryable = true, retryAfter = 2s)
+RetryScheduled(cloud, attemptNumber = 2, delay = 2s)
+ProviderAttemptStarted(cloud, attemptNumber = 2)
 ...
 ```
 
@@ -108,7 +111,7 @@ Request deadline exhausted:
 
 ```text
 ProviderAttemptStarted(local)
-ProviderAttemptFailed(local, Timeout.RequestDeadlineExceeded)
+ProviderAttemptCompleted(local, outcome = Failed, error = Timeout/RequestDeadlineExceeded)
 Failed(RequestDeadlineExceeded)
 ```
 
