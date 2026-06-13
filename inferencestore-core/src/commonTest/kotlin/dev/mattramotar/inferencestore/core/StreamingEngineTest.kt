@@ -1,6 +1,7 @@
 package dev.mattramotar.inferencestore.core
 
 import dev.mattramotar.inferencestore.core.event.AttemptOutcome
+import dev.mattramotar.inferencestore.core.event.FinalStatus
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceKey
@@ -155,5 +156,27 @@ class StreamingEngineTest {
         val firstTwo = store.stream(InferenceRequest.text(key, "hi")).take(2).toList()
         assertEquals(2, firstTwo.size)
         assertTrue(firstTwo[0] is InferenceEvent.Started)
+    }
+
+    @Test
+    fun success_attachesRouteTrace() = runTest {
+        val result = InferenceStore.single(echoProvider()).generate(InferenceRequest.text(key, "hi"))
+        val trace = result.trace
+        assertTrue(trace != null)
+        assertEquals(FinalStatus.Succeeded, trace.finalStatus)
+        assertEquals("echo", trace.finalProvider)
+        assertEquals(1, trace.attempts.size)
+        assertEquals(AttemptOutcome.Succeeded, trace.attempts[0].outcome)
+        assertEquals("echo-1", trace.attempts[0].modelId)
+    }
+
+    @Test
+    fun failure_attachesRouteTraceWithErrorCategory() = runTest {
+        val last = InferenceStore.single(failing).stream(InferenceRequest.text(key, "hi")).toList().last()
+        assertTrue(last is InferenceEvent.Failed)
+        val trace = last.trace
+        assertTrue(trace != null)
+        assertEquals(FinalStatus.Failed, trace.finalStatus)
+        assertEquals(ErrorCategory.RateLimited, trace.attempts[0].errorCategory)
     }
 }

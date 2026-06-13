@@ -1,11 +1,14 @@
 package dev.mattramotar.inferencestore.core
 
 import dev.mattramotar.inferencestore.core.event.AttemptOutcome
+import dev.mattramotar.inferencestore.core.event.FinalStatus
 import dev.mattramotar.inferencestore.core.event.InferenceError
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.event.InferenceResult
 import dev.mattramotar.inferencestore.core.event.ProviderAttemptSummary
+import dev.mattramotar.inferencestore.core.event.ProviderAttemptTrace
 import dev.mattramotar.inferencestore.core.event.RequestId
+import dev.mattramotar.inferencestore.core.event.RouteTrace
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
@@ -78,6 +81,8 @@ internal class SingleProviderInferenceStore(
             val providerRequest = request.toProviderRequest()
             val context = InferenceContext(timeout = request.timeout)
             val requestId = RequestId(request.key.asString())
+            val keyString = request.key.asString()
+            var modelId: String? = null
             emit(InferenceEvent.Started(requestId, request.key))
             emit(
                 InferenceEvent.ProviderAttemptStarted(
@@ -89,10 +94,11 @@ internal class SingleProviderInferenceStore(
                 provider.stream(providerRequest, context)
                     .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
                         when (event) {
-                            is ProviderEvent.Started -> Unit
+                            is ProviderEvent.Started -> modelId = event.metadata.modelId
                             is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
                             is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
                             is ProviderEvent.Completed -> {
+                                modelId = event.metadata.modelId ?: modelId
                                 emit(
                                     InferenceEvent.ProviderAttemptCompleted(
                                         requestId,
@@ -102,21 +108,28 @@ internal class SingleProviderInferenceStore(
                                 emit(
                                     InferenceEvent.Done(
                                         requestId,
-                                        InferenceResult(request.key, event.output, event.rawText),
+                                        InferenceResult(
+                                            request.key,
+                                            event.output,
+                                            event.rawText,
+                                            trace = routeTrace(requestId, keyString, FinalStatus.Succeeded, AttemptOutcome.Succeeded, modelId, errorCategory = null),
+                                        ),
                                     ),
                                 )
                             }
                             is ProviderEvent.Failed -> {
+                                val category = event.error.category
                                 emit(
                                     InferenceEvent.ProviderAttemptCompleted(
                                         requestId,
-                                        ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Failed, event.error.category),
+                                        ProviderAttemptSummary(provider.id, 1, AttemptOutcome.Failed, category),
                                     ),
                                 )
                                 emit(
                                     InferenceEvent.Failed(
                                         requestId,
-                                        InferenceError(event.error.category, event.error.message, event.error.cause),
+                                        InferenceError(category, event.error.message, event.error.cause),
+                                        trace = routeTrace(requestId, keyString, FinalStatus.Failed, AttemptOutcome.Failed, modelId, errorCategory = category),
                                     ),
                                 )
                             }
@@ -138,11 +151,35 @@ internal class SingleProviderInferenceStore(
                             InferenceEvent.Failed(
                                 requestId,
                                 InferenceError(ErrorCategory.Unknown, throwable.message, throwable),
+                                trace = routeTrace(requestId, keyString, FinalStatus.Failed, AttemptOutcome.Failed, modelId, errorCategory = ErrorCategory.Unknown),
                             ),
                         )
                     },
             )
         }.flowOn(config.providerContext)
+
+    private fun routeTrace(
+        requestId: RequestId,
+        key: String,
+        finalStatus: FinalStatus,
+        outcome: AttemptOutcome,
+        modelId: String?,
+        errorCategory: ErrorCategory?,
+    ): RouteTrace = RouteTrace(
+        requestId = requestId.value,
+        key = key,
+        finalStatus = finalStatus,
+        attempts = listOf(
+            ProviderAttemptTrace(
+                providerId = provider.id.value,
+                providerKind = provider.kind,
+                outcome = outcome,
+                modelId = modelId,
+                errorCategory = errorCategory,
+            ),
+        ),
+        finalProvider = if (finalStatus == FinalStatus.Succeeded) provider.id.value else null,
+    )
 
     override suspend fun <Output : Any> generate(request: InferenceRequest<Output>): InferenceResult<Output> {
         val terminal = stream(request).first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
