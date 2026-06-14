@@ -52,6 +52,7 @@ nav:
       - Route journal: concepts/route-journal.md
       - Provider inventory: concepts/provider-inventory.md
       - Model warmup: concepts/model-warmup.md
+      - Telemetry upload: concepts/telemetry-upload.md
   - Guides:
       - Writing a provider adapter: guides/writing-a-provider-adapter.md
       - Security & privacy: guides/security-and-privacy.md
