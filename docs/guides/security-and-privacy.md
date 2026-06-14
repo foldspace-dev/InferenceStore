@@ -98,8 +98,8 @@ defaults implicitly.
 ## Cache persistence advice
 
 - A result is written to the cache **only when both** the cache policy allows writes
-  **and** `persistence.persistOutput` is true. Default privacy persists nothing, so by
-  default the cache never stores output.
+  **and** `persistence.persistOutput` is true. Default privacy persists no prompt/output
+  (only a redacted trace), so by default the cache never stores output.
 - Caching is best-effort and never fails a request; the fingerprint key stores no raw
   content.
 - **Multi-user scoping is the app's responsibility.** The fingerprint does NOT include
