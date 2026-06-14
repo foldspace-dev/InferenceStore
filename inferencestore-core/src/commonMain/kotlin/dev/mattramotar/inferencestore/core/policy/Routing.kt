@@ -60,8 +60,9 @@ public object Policies {
 
     /**
      * Try local first, then cloud for repair. Routing order matches
-     * [preferLocalThenCloud]; the validation-triggered fallback that makes this
-     * a "repair" path is wired in OSS-8 (validators).
+     * [preferLocalThenCloud]; pair it with a request `validator` and
+     * `FallbackPolicy(repairEnabled = true)` so a local output that fails
+     * validation repairs on cloud (OSS-17).
      */
     public fun validateLocalThenCloudRepair(): InferencePolicy =
         tiered("validateLocalThenCloudRepair", localKinds, cloudKinds)

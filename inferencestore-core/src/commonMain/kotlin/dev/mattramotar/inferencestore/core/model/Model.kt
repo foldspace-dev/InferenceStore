@@ -6,6 +6,7 @@ import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.policy.RetryPolicy
 import dev.mattramotar.inferencestore.core.policy.TimeoutPolicy
+import dev.mattramotar.inferencestore.core.validation.OutputValidator
 import kotlinx.serialization.KSerializer
 
 /**
@@ -96,6 +97,7 @@ public data class InferenceRequest<Output : Any>(
     public val timeout: TimeoutPolicy = TimeoutPolicy.Default,
     public val retry: RetryPolicy = RetryPolicy.Default,
     public val fallback: FallbackPolicy = FallbackPolicy.Default,
+    public val validator: OutputValidator<Output>? = null,
     public val prompt: PromptSpec? = null,
     public val metadata: Map<String, String> = emptyMap(),
 ) {
@@ -107,6 +109,7 @@ public data class InferenceRequest<Output : Any>(
             privacy: PrivacyPolicy = PrivacyPolicy.Default,
             policy: InferencePolicy? = null,
             fallback: FallbackPolicy = FallbackPolicy.Default,
+            validator: OutputValidator<String>? = null,
         ): InferenceRequest<String> = InferenceRequest(
             key = key,
             input = InferenceInput.Text(input),
@@ -114,6 +117,7 @@ public data class InferenceRequest<Output : Any>(
             privacy = privacy,
             policy = policy,
             fallback = fallback,
+            validator = validator,
         )
 
         /** Convenience for a text-in, typed-JSON-out request. */
@@ -124,6 +128,7 @@ public data class InferenceRequest<Output : Any>(
             privacy: PrivacyPolicy = PrivacyPolicy.Default,
             policy: InferencePolicy? = null,
             fallback: FallbackPolicy = FallbackPolicy.Default,
+            validator: OutputValidator<Output>? = null,
         ): InferenceRequest<Output> = InferenceRequest(
             key = key,
             input = InferenceInput.Text(input),
@@ -131,6 +136,7 @@ public data class InferenceRequest<Output : Any>(
             privacy = privacy,
             policy = policy,
             fallback = fallback,
+            validator = validator,
         )
     }
 }
