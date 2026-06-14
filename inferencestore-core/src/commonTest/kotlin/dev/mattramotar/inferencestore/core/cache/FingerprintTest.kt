@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -82,8 +83,11 @@ class FingerprintTest {
         val json = fp(InferenceRequest.json(key, "x", serializer<String>()))
         val custom = fp(InferenceRequest(key, InferenceInput.Text("x"), OutputSpec.Custom { it }))
         assertEquals("text", text.outputVersion)
+        assertEquals("custom", custom.outputVersion)
         // JSON is namespaced so a serializer named "text" can't collide with Text output.
-        assertTrue(json.outputVersion?.startsWith("json:") == true)
+        val jsonVersion = json.outputVersion
+        assertNotNull(jsonVersion)
+        assertTrue(jsonVersion.startsWith("json:"))
         assertNotEquals(text.outputVersion, custom.outputVersion)
         assertNotEquals(text.outputVersion, json.outputVersion)
         assertNotEquals(json.outputVersion, custom.outputVersion)
