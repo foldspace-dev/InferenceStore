@@ -11,6 +11,8 @@ import dev.mattramotar.inferencestore.core.event.ProviderAttemptTrace
 import dev.mattramotar.inferencestore.core.event.RejectedProviderTrace
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.event.RouteTrace
+import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
+import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.FallbackMapping
 import dev.mattramotar.inferencestore.core.policy.delayFor
@@ -30,6 +32,8 @@ import dev.mattramotar.inferencestore.core.provider.ProviderId
 import dev.mattramotar.inferencestore.core.provider.ProviderEvent
 import dev.mattramotar.inferencestore.core.provider.toProviderRequest
 import dev.mattramotar.inferencestore.core.validation.ValidationResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -103,12 +107,18 @@ public class InferenceStoreBuilder {
 }
 
 /**
- * Execution contexts for the engine. Minimal for now: [providerContext] moves
- * provider work off the collecting thread. Planning/blocking/monitor contexts
- * and dedupe fan-out are added in OSS-14 per `threading-dispatchers.md`.
+ * Execution contexts for the engine (`threading-dispatchers.md`). Dispatcher-
+ * neutral: core does not assume platform UI dispatchers exist. [providerContext]
+ * moves provider work off the collecting thread; [planningContext] is for route
+ * planning; [blockingProviderContext] is for adapters' blocking init/native work;
+ * [monitorContext] is for monitor emission (OSS-19). The dedupe coordinator and
+ * its in-flight groups run on [providerContext].
  */
 public class InferenceExecutionConfig(
     public val providerContext: CoroutineContext = EmptyCoroutineContext,
+    public val planningContext: CoroutineContext = EmptyCoroutineContext,
+    public val blockingProviderContext: CoroutineContext = EmptyCoroutineContext,
+    public val monitorContext: CoroutineContext = EmptyCoroutineContext,
     /**
      * Clock for request-deadline budget accounting. Defaults to the monotonic
      * system clock; tests pass `TestScope.testTimeSource` so deadlines respect the
@@ -148,7 +158,18 @@ internal class RoutedInferenceStore(
         }
     }
 
-    override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
+    // Long-lived scope for in-flight dedupe groups: it must outlive any single
+    // collector so ref-counted sharing/cleanup works. Groups self-cancel when
+    // their last subscriber leaves (SharingStarted.WhileSubscribed).
+    private val dedupeScope = CoroutineScope(SupervisorJob() + config.providerContext)
+    private val dedupe = DedupeCoordinator(dedupeScope)
+
+    override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> {
+        val route = routeStream(request)
+        return if (request.cache.allowDedupe) dedupe.deduped(dedupeKey(request), route) else route
+    }
+
+    private fun <Output : Any> routeStream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
         flow {
             val requestId = RequestId(request.key.asString())
             val key = request.key.asString()
@@ -460,6 +481,17 @@ internal class RoutedInferenceStore(
             is InferenceEvent.Failed -> throw InferenceException(terminal.error)
             else -> error("unreachable terminal event: $terminal")
         }
+    }
+
+    // Dedupe compatibility key. Uses input hash codes (not raw content) so the
+    // in-flight registry never retains prompts. Full fingerprinting (prompt/output
+    // versions, policy version) arrives with OSS-20.
+    private fun dedupeKey(request: InferenceRequest<*>): String {
+        val inputSignature = when (val input = request.input) {
+            is InferenceInput.Text -> input.value.hashCode()
+            is InferenceInput.Messages -> input.messages.hashCode()
+        }
+        return "${request.key.asString()}|$inputSignature|${request.privacy.classification}|${request.output::class.simpleName}"
     }
 }
 
