@@ -7,6 +7,7 @@ import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
 import dev.mattramotar.inferencestore.core.policy.Policies
+import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -133,6 +134,74 @@ class DedupeTest {
 
         provider.assertInvocations(1)
         provider.assertCancelled()
+    }
+
+    @Test
+    fun generate_joinsAfterFirstContent_sharesUpstream() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            tokens("hi") // first content closes the stream-join window immediately
+            delay(1.seconds)
+            complete("hi")
+        }
+        val store = store(provider, dispatcher)
+
+        val a = async { store.stream(dedupeRequest()).toList() }
+        runCurrent() // a is now past first content
+        val g = async { store.generate(dedupeRequest()) } // generate joins past content
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("hi", (a.await().last() as InferenceEvent.Done<*>).result.output)
+        assertEquals("hi", g.await().output)
+        provider.assertInvocations(1) // generate joined the in-flight group
+    }
+
+    @Test
+    fun joiner_receivesFullPreludeAcrossFallbacks() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val p1 = fakeProvider("p1", ProviderKind.Local) { fail(ErrorCategory.TransientProviderError) }
+        val p2 = fakeProvider("p2", ProviderKind.Local) { fail(ErrorCategory.TransientProviderError) }
+        val p3 = fakeProvider("p3", ProviderKind.Local) {
+            delay(1.seconds)
+            tokens("ok")
+            complete("ok")
+        }
+        val store = InferenceStore.build {
+            provider(p1)
+            provider(p2)
+            provider(p3)
+            policy = Policies.preferLocalThenCloud()
+            executionConfig = InferenceExecutionConfig(providerContext = dispatcher)
+        }
+
+        val a = async { store.stream(dedupeRequest()).toList() }
+        runCurrent() // p1/p2 fail + fall back; p3 parks at the delay (many pre-content events, no token yet)
+        val b = async { store.stream(dedupeRequest()).toList() }
+        runCurrent() // b joins before first content
+        advanceUntilIdle()
+
+        val eventsB = b.await()
+        // The joiner gets the FULL prelude (Started first), not a truncated replay.
+        assertTrue(eventsB.first() is InferenceEvent.Started)
+        assertEquals(listOf("ok"), eventsB.filterIsInstance<InferenceEvent.Token>().map { it.text })
+        a.await()
+        p3.assertInvocations(1) // shared
+    }
+
+    @Test
+    fun close_cancelsInFlightUpstream() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) { blockUntilCancelled() }
+        val store = store(provider, dispatcher)
+
+        val a = async { store.stream(dedupeRequest()).toList() }
+        runCurrent()
+        store.close() // tears down the dedupe scope
+        advanceUntilIdle()
+
+        provider.assertCancelled()
+        a.await() // completes once its channel is closed
     }
 
     @Test

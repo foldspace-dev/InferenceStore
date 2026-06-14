@@ -14,6 +14,7 @@ import dev.mattramotar.inferencestore.core.event.RouteTrace
 import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.model.OutputSpec
 import dev.mattramotar.inferencestore.core.policy.FallbackMapping
 import dev.mattramotar.inferencestore.core.policy.delayFor
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
@@ -34,6 +35,7 @@ import dev.mattramotar.inferencestore.core.provider.toProviderRequest
 import dev.mattramotar.inferencestore.core.validation.ValidationResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -67,10 +69,13 @@ import kotlin.time.TimeSource
  * engine executes the route with fallback. Privacy enforcement, validation, cache,
  * and dedupe are layered on in OSS-15 / OSS-8 / OSS-25 / OSS-11.
  */
-public interface InferenceStore {
+public interface InferenceStore : AutoCloseable {
     public fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>>
 
     public suspend fun <Output : Any> generate(request: InferenceRequest<Output>): InferenceResult<Output>
+
+    /** Releases the store's dedupe scope. Optional; default is a no-op for stores without one. */
+    override fun close() {}
 
     public companion object {
         public const val VERSION: String = "0.1.0-dev"
@@ -159,14 +164,19 @@ internal class RoutedInferenceStore(
     }
 
     // Long-lived scope for in-flight dedupe groups: it must outlive any single
-    // collector so ref-counted sharing/cleanup works. Groups self-cancel when
-    // their last subscriber leaves (SharingStarted.WhileSubscribed).
+    // collector so ref-counted sharing/cleanup works. Groups ref-count their
+    // subscribers and cancel upstream when the last one leaves; close() tears the
+    // whole scope down.
     private val dedupeScope = CoroutineScope(SupervisorJob() + config.providerContext)
     private val dedupe = DedupeCoordinator(dedupeScope)
 
+    override fun close() {
+        dedupeScope.cancel()
+    }
+
     override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> {
         val route = routeStream(request)
-        return if (request.cache.allowDedupe) dedupe.deduped(dedupeKey(request), route) else route
+        return if (shouldDedupe(request)) dedupe.stream(dedupeKey(request), route) else route
     }
 
     private fun <Output : Any> routeStream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
@@ -472,7 +482,15 @@ internal class RoutedInferenceStore(
         }.flowOn(config.providerContext)
 
     override suspend fun <Output : Any> generate(request: InferenceRequest<Output>): InferenceResult<Output> {
-        val terminal = stream(request).first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
+        // generate() may join an in-flight dedupe group until the terminal result
+        // (it needs no token replay); otherwise it runs the route directly.
+        val terminal: InferenceEvent<Output> = if (shouldDedupe(request)) {
+            dedupe.generate(dedupeKey(request), routeStream(request))
+        } else {
+            @Suppress("UNCHECKED_CAST")
+            routeStream(request).first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
+                as InferenceEvent<Output>
+        }
         return when (terminal) {
             is InferenceEvent.Done<*> -> {
                 @Suppress("UNCHECKED_CAST")
@@ -483,15 +501,35 @@ internal class RoutedInferenceStore(
         }
     }
 
+    // Dedupe is opt-in and only for outputs with a stable identity (not Custom).
+    private fun shouldDedupe(request: InferenceRequest<*>): Boolean =
+        request.cache.allowDedupe && outputSignature(request.output) != null
+
+    private fun outputSignature(output: OutputSpec<*>): String? = when (output) {
+        is OutputSpec.Text -> "text"
+        is OutputSpec.Json -> "json:${output.serializer.descriptor.serialName}"
+        is OutputSpec.Custom -> null // no stable identity for a custom parser → do not dedupe
+    }
+
     // Dedupe compatibility key. Uses input hash codes (not raw content) so the
-    // in-flight registry never retains prompts. Full fingerprinting (prompt/output
-    // versions, policy version) arrives with OSS-20.
+    // in-flight registry never retains prompts, and includes the policy, privacy,
+    // and output-schema identity so requests are only shared when truly compatible.
+    // Full fingerprinting (prompt/output/policy versions) arrives with OSS-20.
     private fun dedupeKey(request: InferenceRequest<*>): String {
         val inputSignature = when (val input = request.input) {
             is InferenceInput.Text -> input.value.hashCode()
             is InferenceInput.Messages -> input.messages.hashCode()
         }
-        return "${request.key.asString()}|$inputSignature|${request.privacy.classification}|${request.output::class.simpleName}"
+        val policySignature = request.policy?.let { it::class.qualifiedName ?: it::class.simpleName } ?: "default"
+        return listOf(
+            request.key.asString(),
+            inputSignature.toString(),
+            outputSignature(request.output) ?: "custom",
+            request.privacy.classification.toString(),
+            request.privacy.cloud.toString(),
+            request.privacy.persistence.toString(),
+            policySignature,
+        ).joinToString("|")
     }
 }
 
