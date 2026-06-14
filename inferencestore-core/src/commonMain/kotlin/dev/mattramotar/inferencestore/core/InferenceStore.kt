@@ -227,8 +227,18 @@ internal class RoutedInferenceStore(
             // The fingerprint is content-free and reused for the post-success write.
             // All cache work is best-effort — a failing cache (or custom fingerprinter)
             // must never fail an otherwise-successful request, so it is tolerated to a
-            // miss/skipped-write rather than propagated.
-            val fingerprint = if (cache != null) tolerateCacheFailure(null) { fingerprinter.fingerprint(request) } else null
+            // miss/skipped-write rather than propagated. Compute the fingerprint only
+            // when this request could actually use the cache, and bound it by the
+            // remaining budget so a slow custom fingerprinter can't blow the deadline.
+            val wantsCacheAccess = cache != null && (
+                request.cache.read == CacheAccess.Allow ||
+                    (request.cache.write == CacheAccess.Allow && request.privacy.persistence.persistOutput)
+                )
+            val fingerprint = if (wantsCacheAccess) {
+                tolerateCacheFailure(remainingBudget()) { fingerprinter.fingerprint(request) }
+            } else {
+                null
+            }
             if (cache != null && fingerprint != null && request.cache.read == CacheAccess.Allow) {
                 // Bound the read by the remaining request budget so a slow (non-throwing)
                 // cache cannot hang the request past its deadline.
