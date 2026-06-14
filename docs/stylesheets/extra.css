@@ -1,0 +1,178 @@
+/* ============================================================================
+   InferenceStore docs — brand design system
+   ========================================================================= */
+
+:root {
+  /* Brand palette: indigo → cyan, evoking routing across local + cloud. */
+  --is-indigo: #4f46e5;
+  --is-indigo-light: #6366f1;
+  --is-indigo-dark: #4338ca;
+  --is-cyan: #0891b2;
+  --is-cyan-light: #06b6d4;
+
+  --md-primary-fg-color: var(--is-indigo);
+  --md-primary-fg-color--light: var(--is-indigo-light);
+  --md-primary-fg-color--dark: var(--is-indigo-dark);
+  --md-accent-fg-color: var(--is-cyan-light);
+
+  --is-gradient: linear-gradient(100deg, var(--is-indigo) 0%, var(--is-cyan-light) 100%);
+
+  --md-code-font: "JetBrains Mono", SFMono-Regular, Consolas, monospace;
+}
+
+/* Links pop in the brand indigo, slightly bolder than body text. */
+[data-md-color-scheme="default"] {
+  --md-typeset-a-color: var(--is-indigo);
+}
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: var(--is-indigo-light);
+  --md-accent-fg-color: #22d3ee;
+  --md-typeset-a-color: #818cf8;
+  --md-default-bg-color: #0f1117;
+  --md-code-bg-color: #161922;
+}
+
+/* ----------------------------------------------------------------------------
+   Hero (landing page)
+   ------------------------------------------------------------------------- */
+
+.hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  align-items: center;
+  padding: 2.2rem 0 1.4rem;
+}
+@media screen and (min-width: 60em) {
+  .hero {
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 3rem;
+    padding: 3rem 0 2rem;
+  }
+}
+
+.hero__eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--is-cyan);
+  margin-bottom: 0.6rem;
+}
+
+.hero h1 {
+  font-size: 2.4rem;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.8rem;
+  color: var(--md-default-fg-color);
+}
+.hero .gradient {
+  background: var(--is-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero__sub {
+  font-size: 1.04rem;
+  line-height: 1.6;
+  color: var(--md-default-fg-color--light);
+  max-width: 34rem;
+  margin: 0 0 1.4rem;
+}
+
+.hero__cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Code panel beside the hero copy. */
+.hero__code {
+  border-radius: 0.7rem;
+  overflow: hidden;
+  box-shadow: 0 18px 50px -16px rgba(79, 70, 229, 0.45);
+}
+.hero__code .highlight pre {
+  margin: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Buttons
+   ------------------------------------------------------------------------- */
+
+.md-typeset .md-button--primary {
+  background: var(--is-gradient);
+  border: none;
+  color: #fff;
+  box-shadow: 0 6px 20px -8px rgba(79, 70, 229, 0.6);
+}
+.md-typeset .md-button--primary:hover {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+}
+.md-typeset .md-button {
+  transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+  font-weight: 600;
+}
+
+/* ----------------------------------------------------------------------------
+   Grid cards
+   ------------------------------------------------------------------------- */
+
+.md-typeset .grid.cards > ul > li,
+.md-typeset .grid > .card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.6rem;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.md-typeset .grid.cards > ul > li:hover {
+  border-color: var(--is-indigo-light);
+  box-shadow: 0 12px 30px -18px rgba(79, 70, 229, 0.55);
+  transform: translateY(-2px);
+}
+.md-typeset .grid.cards > ul > li > hr {
+  margin: 0.7rem 0;
+}
+
+/* Small uppercase section eyebrow usable anywhere. */
+.eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--is-cyan);
+}
+
+/* ----------------------------------------------------------------------------
+   Diagrams (Mermaid) — center and constrain
+   ------------------------------------------------------------------------- */
+
+.md-typeset .mermaid {
+  display: flex;
+  justify-content: center;
+  margin: 1.4rem 0;
+}
+
+/* ----------------------------------------------------------------------------
+   Misc polish
+   ------------------------------------------------------------------------- */
+
+/* Tighter, calmer table headers. */
+.md-typeset table:not([class]) th {
+  font-weight: 700;
+}
+
+/* Inline code in the brand tint for readability. */
+.md-typeset :not(pre) > code {
+  border-radius: 0.25rem;
+}
+
+/* Footer credit spacing. */
+.md-footer-meta {
+  font-size: 0.74rem;
+}
