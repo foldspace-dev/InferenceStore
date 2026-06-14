@@ -16,7 +16,6 @@ import dev.mattramotar.inferencestore.core.cache.Fingerprinter
 import dev.mattramotar.inferencestore.core.cache.InferenceArtifact
 import dev.mattramotar.inferencestore.core.cache.InferenceCache
 import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
-import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.model.OutputSpec
 import dev.mattramotar.inferencestore.core.monitor.InferenceMonitor
@@ -204,7 +203,8 @@ internal class RoutedInferenceStore(
 
     override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> {
         val route = routeStream(request).withMonitors(request)
-        return if (shouldDedupe(request)) dedupe.stream(dedupeKey(request), route) else route
+        val dedupeKey = dedupeKeyOrNull(request)
+        return if (dedupeKey != null) dedupe.stream(dedupeKey, route) else route
     }
 
     private fun <Output : Any> routeStream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
@@ -584,8 +584,9 @@ internal class RoutedInferenceStore(
         // generate() may join an in-flight dedupe group until the terminal result
         // (it needs no token replay); otherwise it runs the route directly.
         val route = routeStream(request).withMonitors(request)
-        val terminal: InferenceEvent<Output> = if (shouldDedupe(request)) {
-            dedupe.generate(dedupeKey(request), route)
+        val dedupeKey = dedupeKeyOrNull(request)
+        val terminal: InferenceEvent<Output> = if (dedupeKey != null) {
+            dedupe.generate(dedupeKey, route)
         } else {
             route.first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
         }
@@ -658,38 +659,32 @@ internal class RoutedInferenceStore(
         }
     }
 
-    // Dedupe is opt-in and only for outputs with a stable identity (not Custom).
-    private fun shouldDedupe(request: InferenceRequest<*>): Boolean =
-        request.cache.allowDedupe && outputSignature(request.output) != null
-
     private fun outputSignature(output: OutputSpec<*>): String? = when (output) {
         is OutputSpec.Text -> "text"
         is OutputSpec.Json -> "json:${output.serializer.descriptor.serialName}"
         is OutputSpec.Custom -> null // no stable identity for a custom parser → do not dedupe
     }
 
-    // Dedupe compatibility key. Uses input hash codes (not raw content) so the
-    // in-flight registry never retains prompts, and includes the policy, privacy,
-    // output-schema, AND cache identity so requests are shared only when truly
-    // compatible — two in-flight requests differing in cache read/write access must
-    // NOT share one execution, or one caller's explicit cache.write would silently
-    // decide the other's persistence. Reusing the OSS-20 fingerprint here is OSS-21.
-    private fun dedupeKey(request: InferenceRequest<*>): String {
-        val inputSignature = when (val input = request.input) {
-            is InferenceInput.Text -> input.value.hashCode()
-            is InferenceInput.Messages -> input.messages.hashCode()
+    // Dedupe compatibility key, or null when the request must run alone. Dedupe is
+    // opt-in (allowDedupe) and only for outputs with a stable identity (not Custom).
+    //
+    // The key is the canonical OSS-20 [InferenceFingerprint] — content-free (hashes,
+    // not raw prompts) and the SAME identity the cache keys on, so dedupe and cache
+    // agree on what "equivalent" means — plus the request's cache access policy. The
+    // cache part matters because two in-flight requests differing only in cache
+    // read/write must NOT share one execution, or one caller's explicit cache.write
+    // would silently decide the other's persistence. A misbehaving custom
+    // fingerprinter disables sharing (null) rather than failing the request.
+    private fun dedupeKeyOrNull(request: InferenceRequest<*>): String? {
+        if (!request.cache.allowDedupe || outputSignature(request.output) == null) return null
+        val fingerprint = try {
+            fingerprinter.fingerprint(request)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (throwable: Throwable) {
+            return null
         }
-        val policySignature = request.policy?.stableId() ?: "default"
-        return listOf(
-            request.key.asString(),
-            inputSignature.toString(),
-            outputSignature(request.output) ?: "custom",
-            request.privacy.classification.toString(),
-            request.privacy.cloud.toString(),
-            request.privacy.persistence.toString(),
-            policySignature,
-            request.cache.toString(),
-        ).joinToString("|")
+        return "$fingerprint|${request.cache}"
     }
 }
 

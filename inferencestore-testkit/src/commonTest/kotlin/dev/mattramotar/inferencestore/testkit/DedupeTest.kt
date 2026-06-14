@@ -8,6 +8,7 @@ import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
 import dev.mattramotar.inferencestore.core.policy.Policies
+import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -255,6 +256,33 @@ class DedupeTest {
         assertEquals("ok", a.await().output)
         assertEquals("ok", b.await().output)
         provider.assertInvocations(2) // distinct policy identities -> separate executions
+    }
+
+    @Test
+    fun differingPrivacy_doesNotShareExecution() = runTest {
+        // Same key + input but different privacy classification -> different fingerprint
+        // -> requests must not share one execution (OSS-21 privacy-incompatibility case).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            delay(1.seconds)
+            complete("ok")
+        }
+        val store = store(provider, dispatcher)
+
+        val dedupe = CachePolicy(allowDedupe = true)
+        val a = async {
+            store.generate(InferenceRequest.text(key, "x", privacy = PrivacyPolicy.Default).copy(cache = dedupe))
+        }
+        runCurrent()
+        val b = async {
+            store.generate(InferenceRequest.text(key, "x", privacy = PrivacyPolicy.publicData()).copy(cache = dedupe))
+        }
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("ok", a.await().output)
+        assertEquals("ok", b.await().output)
+        provider.assertInvocations(2)
     }
 
     @Test
