@@ -5,6 +5,7 @@ import dev.mattramotar.inferencestore.core.InferenceStore
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
 import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
@@ -202,6 +203,58 @@ class DedupeTest {
 
         provider.assertCancelled()
         a.await() // completes once its channel is closed
+    }
+
+    @Test
+    fun differingCacheAccess_doesNotShareExecution() = runTest {
+        // Two concurrent requests identical except for cache write access must NOT
+        // dedupe — otherwise the group creator's cache.write would silently decide
+        // the other caller's persistence (OSS-25 adversarial finding).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            delay(1.seconds)
+            complete("ok")
+        }
+        val store = store(provider, dispatcher)
+
+        val writeReq = InferenceRequest.text(key, "x")
+            .copy(cache = CachePolicy(allowDedupe = true, write = CacheAccess.Allow))
+        val noWriteReq = InferenceRequest.text(key, "x")
+            .copy(cache = CachePolicy(allowDedupe = true, write = CacheAccess.Deny))
+
+        val a = async { store.generate(writeReq) }
+        runCurrent()
+        val b = async { store.generate(noWriteReq) }
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("ok", a.await().output)
+        assertEquals("ok", b.await().output)
+        provider.assertInvocations(2) // separate executions, each honoring its own cache policy
+    }
+
+    @Test
+    fun differingPolicy_doesNotShareExecution() = runTest {
+        // Two distinct per-request policies that both route to the local provider must
+        // NOT share one execution. Their stable policyIds differ; pre-fix the dedupe key
+        // used reflective class names, which collapse all lambda presets to one class
+        // (and are null on Native), wrongly merging incompatible requests (OSS-25 review).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            delay(1.seconds)
+            complete("ok")
+        }
+        val store = store(provider, dispatcher)
+
+        val a = async { store.generate(dedupeRequest().copy(policy = Policies.preferLocalThenCloud())) }
+        runCurrent()
+        val b = async { store.generate(dedupeRequest().copy(policy = Policies.validateLocalThenCloudRepair())) }
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("ok", a.await().output)
+        assertEquals("ok", b.await().output)
+        provider.assertInvocations(2) // distinct policy identities -> separate executions
     }
 
     @Test

@@ -11,6 +11,10 @@ import dev.mattramotar.inferencestore.core.event.ProviderAttemptTrace
 import dev.mattramotar.inferencestore.core.event.RejectedProviderTrace
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.event.RouteTrace
+import dev.mattramotar.inferencestore.core.cache.DefaultFingerprinter
+import dev.mattramotar.inferencestore.core.cache.Fingerprinter
+import dev.mattramotar.inferencestore.core.cache.InferenceArtifact
+import dev.mattramotar.inferencestore.core.cache.InferenceCache
 import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
@@ -26,8 +30,11 @@ import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.policy.PolicyViolation
 import dev.mattramotar.inferencestore.core.policy.PrivacyDecision
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
+import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.allowsProvider
+import dev.mattramotar.inferencestore.core.policy.stableId
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ProviderMetadata
 import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
@@ -110,6 +117,12 @@ public class InferenceStoreBuilder {
     public var policy: InferencePolicy = Policies.preferLocalThenCloud()
     public var executionConfig: InferenceExecutionConfig = InferenceExecutionConfig()
 
+    /** Optional artifact cache (`storage-model.md`); null disables read/write entirely. */
+    public var cache: InferenceCache? = null
+
+    /** Fingerprint strategy used to key the cache; defaults to [DefaultFingerprinter]. */
+    public var fingerprinter: Fingerprinter = DefaultFingerprinter
+
     public fun provider(provider: InferenceProvider) {
         providers += provider
     }
@@ -120,7 +133,7 @@ public class InferenceStoreBuilder {
     }
 
     internal fun build(): InferenceStore =
-        RoutedInferenceStore(providers.toList(), policy, executionConfig, monitors.toList())
+        RoutedInferenceStore(providers.toList(), policy, executionConfig, monitors.toList(), cache, fingerprinter)
 }
 
 /**
@@ -165,6 +178,8 @@ internal class RoutedInferenceStore(
     private val policy: InferencePolicy,
     private val config: InferenceExecutionConfig,
     private val monitors: List<InferenceMonitor> = emptyList(),
+    private val cache: InferenceCache? = null,
+    private val fingerprinter: Fingerprinter = DefaultFingerprinter,
 ) : InferenceStore {
 
     init {
@@ -207,6 +222,51 @@ internal class RoutedInferenceStore(
             val attemptTimeout = request.timeout.attemptTimeout
             fun remainingBudget(): Duration? = requestTimeout?.let { it - deadlineMark.elapsedNow() }
             fun deadlineExceeded(): Boolean = remainingBudget()?.let { it <= Duration.ZERO } == true
+
+            // Artifact cache (storage-model.md): a read may short-circuit provider work.
+            // The fingerprint is content-free and reused for the post-success write.
+            // All cache work is best-effort — a failing cache (or custom fingerprinter)
+            // must never fail an otherwise-successful request, so it is tolerated to a
+            // miss/skipped-write rather than propagated. Compute the fingerprint only
+            // when this request could actually use the cache, and bound it by the
+            // remaining budget so a slow custom fingerprinter can't blow the deadline.
+            val wantsCacheAccess = cache != null && (
+                request.cache.read == CacheAccess.Allow ||
+                    (request.cache.write == CacheAccess.Allow && request.privacy.persistence.persistOutput)
+                )
+            val fingerprint = if (wantsCacheAccess) {
+                tolerateCacheFailure(remainingBudget()) { fingerprinter.fingerprint(request) }
+            } else {
+                null
+            }
+            if (cache != null && fingerprint != null && request.cache.read == CacheAccess.Allow) {
+                // Bound the read by the remaining request budget so a slow (non-throwing)
+                // cache cannot hang the request past its deadline.
+                val cached = tolerateCacheFailure(remainingBudget()) {
+                    cache.read(fingerprint, request.output, request.cache)
+                }
+                // A redacted artifact (output omitted by privacy) cannot serve a hit.
+                if (cached?.output != null) {
+                    emit(
+                        InferenceEvent.Done(
+                            requestId,
+                            InferenceResult(
+                                request.key,
+                                cached.output,
+                                cached.rawText,
+                                trace = RouteTrace(
+                                    requestId = requestId.value,
+                                    key = key,
+                                    finalStatus = FinalStatus.Succeeded,
+                                    finalProvider = cached.provider.providerId.value,
+                                    servedFromCache = true,
+                                ),
+                            ),
+                        ),
+                    )
+                    return@flow
+                }
+            }
 
             // Privacy gate (privacy-model.md): evaluated BEFORE any provider work.
             // A denial is terminal for that provider and routing policy cannot
@@ -330,16 +390,21 @@ internal class RoutedInferenceStore(
                         (attemptTimeout == null || budgetRemaining <= attemptTimeout)
 
                     var modelId: String? = null
+                    var attemptMetadata: ProviderMetadata? = null
                     var result: AttemptResult<Output> = AttemptResult.NoTerminal()
                     emitAll(
                         provider.stream(providerRequest, context)
                             .let { if (attemptBudget != null) it.attemptTimeout(attemptBudget) else it }
                             .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
                                 when (event) {
-                                    is ProviderEvent.Started -> modelId = event.metadata.modelId
+                                    is ProviderEvent.Started -> {
+                                        attemptMetadata = event.metadata
+                                        modelId = event.metadata.modelId
+                                    }
                                     is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
                                     is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
                                     is ProviderEvent.Completed -> {
+                                        attemptMetadata = event.metadata
                                         modelId = event.metadata.modelId ?: modelId
                                         result = AttemptResult.Success(event.output, event.rawText)
                                     }
@@ -374,6 +439,7 @@ internal class RoutedInferenceStore(
                     // the canonical fallback path decides repair (FallbackPolicy.repairEnabled).
                     val produced = result
                     val validator = request.validator
+                    var attemptValidation: ValidationResult? = null
                     if (produced is AttemptResult.Success && validator != null) {
                         var validatorError: Throwable? = null
                         val verdict = try {
@@ -386,6 +452,7 @@ internal class RoutedInferenceStore(
                             validatorError = throwable
                             ValidationResult.Fail("validator threw an exception", ErrorCategory.Unknown)
                         }
+                        attemptValidation = verdict
                         emit(InferenceEvent.ValidationCompleted(requestId, verdict))
                         if (verdict is ValidationResult.Fail) {
                             result = AttemptResult.Failure(verdict.category, message = verdict.reason, cause = validatorError)
@@ -401,26 +468,39 @@ internal class RoutedInferenceStore(
                                 ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Succeeded),
                             ),
                         )
-                        emit(
-                            InferenceEvent.Done(
-                                requestId,
-                                InferenceResult(
-                                    request.key,
-                                    success.output,
-                                    success.rawText,
-                                    trace = RouteTrace(
-                                        requestId = requestId.value,
-                                        key = key,
-                                        finalStatus = FinalStatus.Succeeded,
-                                        policyId = policyId,
-                                        attempts = attempts.toList(),
-                                        rejectedProviders = rejected,
-                                        fallbackReasons = fallbackReasons.toList(),
-                                        finalProvider = provider.id.value,
-                                    ),
-                                ),
-                            ),
+                        val successTrace = RouteTrace(
+                            requestId = requestId.value,
+                            key = key,
+                            finalStatus = FinalStatus.Succeeded,
+                            policyId = policyId,
+                            attempts = attempts.toList(),
+                            rejectedProviders = rejected,
+                            fallbackReasons = fallbackReasons.toList(),
+                            finalProvider = provider.id.value,
                         )
+                        // Cache write (storage-model.md): only when BOTH the cache policy
+                        // and the privacy policy allow persisting output. Runs before the
+                        // Done emission so generate()'s terminal short-circuit can't skip it.
+                        if (cache != null && fingerprint != null &&
+                            request.cache.write == CacheAccess.Allow &&
+                            request.privacy.persistence.persistOutput
+                        ) {
+                            tolerateCacheFailure(remainingBudget()) {
+                                cache.write(
+                                    InferenceArtifact(
+                                        fingerprint = fingerprint,
+                                        output = success.output,
+                                        rawText = success.rawText,
+                                        provider = attemptMetadata
+                                            ?: ProviderMetadata(provider.id, provider.kind, provider.boundary, modelId = modelId),
+                                        trace = if (request.privacy.persistence.persistTrace) successTrace else null,
+                                        validation = attemptValidation,
+                                    ),
+                                    request.cache,
+                                )
+                            }
+                        }
+                        emit(InferenceEvent.Done(requestId, InferenceResult(request.key, success.output, success.rawText, trace = successTrace)))
                         return@flow
                     }
 
@@ -501,9 +581,7 @@ internal class RoutedInferenceStore(
         val terminal: InferenceEvent<Output> = if (shouldDedupe(request)) {
             dedupe.generate(dedupeKey(request), route)
         } else {
-            @Suppress("UNCHECKED_CAST")
             route.first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
-                as InferenceEvent<Output>
         }
         return when (terminal) {
             is InferenceEvent.Done<*> -> {
@@ -586,14 +664,16 @@ internal class RoutedInferenceStore(
 
     // Dedupe compatibility key. Uses input hash codes (not raw content) so the
     // in-flight registry never retains prompts, and includes the policy, privacy,
-    // and output-schema identity so requests are only shared when truly compatible.
-    // Full fingerprinting (prompt/output/policy versions) arrives with OSS-20.
+    // output-schema, AND cache identity so requests are shared only when truly
+    // compatible — two in-flight requests differing in cache read/write access must
+    // NOT share one execution, or one caller's explicit cache.write would silently
+    // decide the other's persistence. Reusing the OSS-20 fingerprint here is OSS-21.
     private fun dedupeKey(request: InferenceRequest<*>): String {
         val inputSignature = when (val input = request.input) {
             is InferenceInput.Text -> input.value.hashCode()
             is InferenceInput.Messages -> input.messages.hashCode()
         }
-        val policySignature = request.policy?.let { it::class.qualifiedName ?: it::class.simpleName } ?: "default"
+        val policySignature = request.policy?.stableId() ?: "default"
         return listOf(
             request.key.asString(),
             inputSignature.toString(),
@@ -602,6 +682,7 @@ internal class RoutedInferenceStore(
             request.privacy.cloud.toString(),
             request.privacy.persistence.toString(),
             policySignature,
+            request.cache.toString(),
         ).joinToString("|")
     }
 }
@@ -611,6 +692,22 @@ internal class RoutedInferenceStore(
  * is treated as "no" (provider unavailable/incapable) rather than failing the
  * whole request, so routing can fall back. Cancellation still propagates.
  */
+/**
+ * Runs a best-effort cache operation, bounded by [budget] when set so a slow
+ * (non-throwing) cache cannot hang the request past its deadline. A failure (a
+ * misbehaving cache or custom fingerprinter) or a timeout yields null — treated as
+ * a miss or a skipped write — and never fails the request; caller cancellation
+ * still propagates.
+ */
+private suspend fun <T> tolerateCacheFailure(budget: Duration?, block: suspend () -> T): T? =
+    try {
+        if (budget != null) withTimeoutOrNull(budget) { block() } else block()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        null
+    }
+
 private suspend fun probe(timeout: Duration?, block: suspend () -> Boolean): Boolean =
     try {
         if (timeout != null) withTimeoutOrNull(timeout) { block() } == true else block()
