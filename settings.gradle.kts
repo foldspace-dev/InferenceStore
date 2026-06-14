@@ -24,6 +24,7 @@ include(
     ":inferencestore-provider-litertlm-android",
     ":inferencestore-provider-firebase-android",
     ":samples:notes-summary",
+    ":samples:cross-platform",
 )
 
 // The Android target is enabled only when a real SDK is configured: an
