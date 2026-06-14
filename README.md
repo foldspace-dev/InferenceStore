@@ -14,6 +14,9 @@ New here? Start with the [Quickstart](docs/quickstart.md) — install to a first
 policy-routed request — and run the [`samples/notes-summary`](samples/notes-summary)
 demo: `./gradlew :samples:notes-summary:run`.
 
+Writing an adapter for a new runtime or endpoint? See
+[Writing a provider adapter](docs/guides/writing-a-provider-adapter.md).
+
 ## What changed in this revision
 
 This package now incorporates the planning critique:
