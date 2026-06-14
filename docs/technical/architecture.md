@@ -48,38 +48,34 @@ The following docs are normative:
 
 ## High-level components
 
-```text
-Feature code
-   |
-   v
-InferenceStore
-   |
-   +--> Request fingerprint / cache policy
-   |
-   +--> Privacy gate
-   |       |
-   |       +--> provider boundary checks
-   |       +--> persistence/telemetry redaction checks
-   |
-   +--> Policy engine
-   |       |
-   |       +--> Provider registry
-   |       +--> Availability probes
-   |       +--> Capability checks
-   |       +--> Cost/latency/timeout rules
-   |
-   +--> Execution controller
-   |       |
-   |       +--> Provider attempt 1
-   |       +--> Validator/evaluator
-   |       +--> Fallback attempt 2
-   |
-   +--> Artifact store / memory cache
-   |
-   +--> Monitor hooks / route journal
+```mermaid
+flowchart TB
+    app["Feature code"] --> store["InferenceStore"]
+
+    subgraph engine["Orchestration engine (core)"]
+        direction TB
+        gate["Privacy gate"]
+        route["Policy / route planner"]
+        exec["Execution controller<br/>stream · timeout · retry · fallback"]
+        validate["Validators &amp; repair"]
+        gate --> route --> exec --> validate
+    end
+
+    store --> engine
+
+    engine -. "read / write" .-> cache[("Cache &amp;<br/>artifact store")]
+    engine -. "consults" .-> inventory[("Provider<br/>inventory")]
+    engine -. "records" .-> journal[("Route<br/>journal")]
+    engine -. "emits redacted" .-> monitor["Monitor /<br/>telemetry"]
+
+    exec --> local["Local providers<br/>LiteRT-LM · Apple FM"]
+    exec --> cloud["Cloud providers<br/>OpenAI-compatible · Firebase"]
+    local --> rt["On-device runtime"]
+    cloud --> api["Cloud API"]
 ```
 
-Privacy gate is intentionally shown outside provider adapters and independent of route policy.
+The privacy gate sits **outside** provider adapters and **before** the route planner —
+it is independent of routing policy, so no policy can route around it.
 
 ## Core module boundaries
 
@@ -127,6 +123,32 @@ Optional persistent implementations:
 Optional M5 integration for model lifecycle and deferred jobs.
 
 ## Request lifecycle
+
+Every `stream()` / `generate()` call flows through the same pipeline. The privacy gate
+runs first; caching can short-circuit it; routing, attempts, validation, and fallback
+loop until a candidate succeeds or the chain is exhausted; and every outcome is traced.
+
+```mermaid
+flowchart TB
+    start(["store.stream(request)"]) --> gate{"Privacy gate:<br/>provider allowed?"}
+    gate -- "cloud-like &amp; denied" --> reject["Record rejected provider<br/>(never invoked)"]
+    reject --> plan
+    gate -- allowed --> cacheRead{"Cache hit?<br/>(if cache.read)"}
+    cacheRead -- yes --> served["Serve from cache"]
+    cacheRead -- no --> plan["Plan route<br/>policy · availability · capability"]
+    plan --> attempt["Provider attempt<br/>stream tokens"]
+    attempt --> validate{"Validate<br/>final output"}
+    validate -- pass --> write["Cache write<br/>(if cache.write &amp; persistable)"]
+    validate -- "fail · fallback / repair" --> next{"Next<br/>candidate?"}
+    next -- yes --> attempt
+    next -- no --> fail["Emit failure"]
+    write --> done["Emit result"]
+    served --> done
+    done --> trace["RouteTrace + redacted monitor events"]
+    fail --> trace
+```
+
+The numbered stages below describe each step in detail.
 
 ### 1. Normalize
 

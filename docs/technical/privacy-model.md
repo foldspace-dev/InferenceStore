@@ -8,11 +8,21 @@ This document is the source of truth for InferenceStore privacy semantics. Other
 
 Privacy is enforced by the execution controller before any provider invocation. Routing policy can choose candidates, but it cannot override a privacy denial. Provider adapters are not trusted to self-enforce privacy.
 
-```text
-request -> privacy gate -> route execution -> provider
-                 ^
-                 | independent of policy DSL bugs
+```mermaid
+flowchart TB
+    req["Request + PrivacyPolicy"] --> each{"For each candidate provider"}
+    each --> cloudlike{"Boundary is<br/>cloud-like?"}
+    cloudlike -- "no (on-device)" --> allow["Eligible to route"]
+    cloudlike -- yes --> perm{"CloudPermission<br/>allows this provider?"}
+    perm -- yes --> allow
+    perm -- no --> deny["Reject: PolicyViolation<br/>recorded in trace, never invoked"]
+    allow --> route["Route execution"]
+    route --> provider["Provider"]
 ```
+
+The gate is independent of the routing-policy DSL: even a buggy or adversarial policy
+cannot route to a provider the `PrivacyPolicy` forbids, because denial happens before
+the route is executed.
 
 ## Canonical request field
 
