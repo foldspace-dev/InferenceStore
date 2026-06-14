@@ -15,7 +15,8 @@ val request = InferenceRequest.text(
 Built-ins (`OutputValidators`): `nonBlankText`, `predicate(...)`, `all(...)`,
 `wellFormedJson()`, and `validJson(serializer)` for structured output. Validators fail
 with a stable `ErrorCategory` — `ValidationFailed` (predicate/domain) or `ParsingFailed`
-(schema/parse), the latter repair-eligible.
+(schema/parse). Both are terminal by default and become repair-eligible only when
+`FallbackPolicy.repairEnabled` is set.
 
 MVP validates the **final** output; partial/streaming validation is post-MVP.
 
