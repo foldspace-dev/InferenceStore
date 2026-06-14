@@ -50,6 +50,7 @@ nav:
       - Artifact store: concepts/artifact-store.md
       - Monitor: concepts/monitor.md
       - Route journal: concepts/route-journal.md
+      - Provider inventory: concepts/provider-inventory.md
   - Guides:
       - Writing a provider adapter: guides/writing-a-provider-adapter.md
       - Security & privacy: guides/security-and-privacy.md
