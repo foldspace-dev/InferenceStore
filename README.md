@@ -30,7 +30,7 @@ This package now incorporates the planning critique:
 
 ## Why this is not another local LLM wrapper
 
-The runtime ecosystem is moving quickly. LiteRT-LM, ExecuTorch, MLC LLM, Llamatik, Cactus, Firebase AI Logic, Apple Foundation Models, and other SDKs already target model execution. InferenceStore should sit **above** them.
+The runtime ecosystem is moving quickly. LiteRT-LM, ExecuTorch, MLC LLM, Llamatik, Cactus, Firebase AI Logic, Apple Foundation Models, and other SDKs already target model execution. InferenceStore should sit **above** them. See the [competitive landscape](docs/strategy/competitive-landscape.md) for a project-by-project comparison and InferenceStore's orchestration-vs-runtime positioning.
 
 The initial library should own:
 
