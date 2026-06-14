@@ -30,7 +30,9 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
       - name: Publish to Maven Central
-        run: ./gradlew publishToMavenCentral --no-configuration-cache --stacktrace
+        # Releases are signed; a -SNAPSHOT version is still published unsigned (the
+        # plugin skips signing for snapshots even with the flag on).
+        run: ./gradlew publishToMavenCentral -PRELEASE_SIGNING_ENABLED=true --no-configuration-cache --stacktrace
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

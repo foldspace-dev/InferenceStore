@@ -10,6 +10,9 @@ plugin (host: Central Portal). Coordinates: `dev.mattramotar.inferencestore:<mod
 `-SNAPSHOT` suffix publishes to the snapshot repository (unsigned); a release version
 (no suffix) is signed and published to Maven Central.
 
+Signing is disabled by default (`RELEASE_SIGNING_ENABLED=false`) so local builds need
+no GPG keys; the publish workflow turns it on with `-PRELEASE_SIGNING_ENABLED=true`.
+
 ## One-time setup (maintainers)
 
 Provide these as Gradle properties / environment variables (never commit them):
