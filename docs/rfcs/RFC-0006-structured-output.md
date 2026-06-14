@@ -89,6 +89,11 @@ store.generate(
 // local emits "{ not json" -> ParsingFailed -> repair on cloud -> valid JSON
 ```
 
+This example uses the **post-hoc validation** path (section 2), which is provider-agnostic:
+the validator inspects raw text and is independent of the `StructuredOutput` capability gate,
+so it works even with providers that only emit free text. A request that instead declared
+`OutputSpec.Json` would additionally be routed only to `StructuredOutput`-capable providers.
+
 ### 4. Streamed partial JSON — post-MVP
 
 MVP validates the **final** output only. Streaming partial-JSON parsing (incrementally

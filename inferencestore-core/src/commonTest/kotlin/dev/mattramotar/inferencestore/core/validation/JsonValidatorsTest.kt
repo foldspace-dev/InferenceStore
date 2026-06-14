@@ -58,7 +58,7 @@ class JsonValidatorsTest {
 
     @Test
     fun wellFormedJson_doesNotValidateSchema() {
-        // Any well-formed JSON passes, regardless of shape.
+        // Any parseable JSON passes, regardless of shape.
         assertEquals(ValidationResult.Pass, OutputValidators.wellFormedJson().validate("x", """{"anything":[1,2,3]}"""))
     }
 }
