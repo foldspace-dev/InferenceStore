@@ -298,6 +298,29 @@ class RoutingTest {
     }
 
     @Test
+    fun customPolicyCannotRouteUnavailableProvider() = runTest {
+        val down = fakeProvider("down", ProviderKind.Local) {
+            availability = ProviderAvailability.Unavailable(UnavailableReason.ModelMissing)
+            complete("down")
+        }
+        val up = fakeProvider("up", ProviderKind.Local) { complete("up") }
+        // A rogue policy returns the unavailable provider first; the backstop drops it.
+        val store = InferenceStore.build {
+            provider(down)
+            provider(up)
+            policy = InferencePolicy { _ -> InferenceRoute("rogue", listOf(down, up)) }
+        }
+
+        val result = store.generate(request)
+        assertEquals("up", result.output)
+        assertRoute(result.trace) {
+            completedWith("up")
+            didNotAttempt("down")
+        }
+        down.assertInvocations(0)
+    }
+
+    @Test
     fun requestPolicyOverridesStoreDefault() = runTest {
         val local = fakeProvider("local", ProviderKind.Local) { complete("local") }
         val cloud = fakeProvider("cloud", ProviderKind.Cloud) { complete("cloud") }

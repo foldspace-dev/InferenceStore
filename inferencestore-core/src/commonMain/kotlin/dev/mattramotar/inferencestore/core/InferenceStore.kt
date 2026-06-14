@@ -159,6 +159,10 @@ internal class RoutedInferenceStore(
             // Start the request-deadline clock here so it covers the FULL request
             // (probes + attempts + retries + fallback), per timeout-retry-policy.md.
             val deadlineMark = config.timeSource.markNow()
+            val requestTimeout = request.timeout.requestTimeout
+            val attemptTimeout = request.timeout.attemptTimeout
+            fun remainingBudget(): Duration? = requestTimeout?.let { it - deadlineMark.elapsedNow() }
+            fun deadlineExceeded(): Boolean = remainingBudget()?.let { it <= Duration.ZERO } == true
 
             // Privacy gate (privacy-model.md): evaluated BEFORE any provider work.
             // A denial is terminal for that provider and routing policy cannot
@@ -173,30 +177,31 @@ internal class RoutedInferenceStore(
                     // A provider that throws while being probed is treated as unavailable
                     // so the policy can route around it instead of crashing the request.
                     PrivacyDecision.Allow -> {
-                        val availabilityTimeout = request.timeout.availabilityTimeout
-                        val available = probe(availabilityTimeout) {
+                        // Each probe is bounded by the smaller of the availability timeout
+                        // and the remaining request budget.
+                        val probeBudget = minDuration(request.timeout.availabilityTimeout, remainingBudget())
+                        val available = probe(probeBudget) {
                             provider.availability(context) == ProviderAvailability.Available
                         }
-                        val supported = available && probe(availabilityTimeout) {
+                        val supported = available && probe(probeBudget) {
                             provider.capabilities(request, context).supported
                         }
                         ProviderCandidate(provider, available, supported)
                     }
                 }
             }
-            val candidateIds = candidates.mapTo(mutableSetOf()) { it.provider.id }
             // The policy may only choose among routable candidates: probed available +
-            // supported and privacy-allowed. Privacy-denied providers are already
-            // marked unavailable, but excluding them by id makes the intent explicit.
+            // supported and privacy-allowed.
             val routableCandidates = candidates.filter {
                 it.available && it.supported && it.provider.id !in privacyDenials
             }
+            val routableIds = routableCandidates.mapTo(mutableSetOf()) { it.provider.id }
             val selected = (request.policy ?: policy).selectRoute(routableCandidates)
             val policyId = selected.policyId
-            // Backstop: the route is authoritative only over providers the engine
-            // probed AND that passed the privacy gate, so neither a custom policy nor a
-            // probe gap can route to an unvetted or privacy-denied provider.
-            val route = selected.orderedProviders.filter { it.id in candidateIds && it.id !in privacyDenials }
+            // Backstop: the route is authoritative only over routable providers, so
+            // neither a custom policy nor a probe gap can route to an unvetted,
+            // unavailable, unsupported, or privacy-denied provider.
+            val route = selected.orderedProviders.filter { it.id in routableIds }
 
             val attempts = mutableListOf<ProviderAttemptTrace>()
             val fallbackReasons = mutableListOf<FallbackReason>()
@@ -243,13 +248,8 @@ internal class RoutedInferenceStore(
                 return@flow
             }
 
-            // Request-deadline budget accounting (timeout-retry-policy.md), measured
-            // on config.timeSource (deadlineMark, started above) so tests can drive it
-            // with the virtual clock.
-            val requestTimeout = request.timeout.requestTimeout
-            val attemptTimeout = request.timeout.attemptTimeout
-            fun remainingBudget(): Duration? = requestTimeout?.let { it - deadlineMark.elapsedNow() }
-            fun deadlineExceeded(): Boolean = remainingBudget()?.let { it <= Duration.ZERO } == true
+            // Request-deadline budget helpers (remainingBudget / deadlineExceeded) and
+            // the deadline clock are defined above so they also cover the probe phase.
             fun failedTrace() = RouteTrace(
                 requestId = requestId.value,
                 key = key,
