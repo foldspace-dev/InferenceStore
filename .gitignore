@@ -9,3 +9,6 @@ local.properties
 captures/
 xcuserdata/
 *.xcworkspace
+
+# MkDocs build output
+/site/
