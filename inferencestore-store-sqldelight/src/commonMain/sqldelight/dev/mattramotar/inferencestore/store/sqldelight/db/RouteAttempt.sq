@@ -19,9 +19,5 @@ VALUES (?, ?, ?, ?, ?, ?, ?);
 selectByProvider:
 SELECT * FROM route_attempt WHERE provider_id = ? ORDER BY recorded_at_epoch_ms DESC;
 
-countFailuresSince:
-SELECT COUNT(*) FROM route_attempt
-WHERE provider_id = ? AND outcome = 'Failed' AND recorded_at_epoch_ms >= ?;
-
 deleteAll:
 DELETE FROM route_attempt;

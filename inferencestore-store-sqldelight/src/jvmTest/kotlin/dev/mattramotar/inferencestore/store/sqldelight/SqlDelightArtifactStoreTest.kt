@@ -29,8 +29,8 @@ class SqlDelightArtifactStoreTest {
     private val fingerprint = InferenceFingerprint(InferenceKey("notes", "n1"), "h1", null, "text", "Personal", null, null)
     private val trace = RouteTrace(requestId = "r1", key = "notes:n1", finalStatus = FinalStatus.Succeeded, finalProvider = "p")
 
-    private fun artifact(rawText: String?) = InferenceArtifact(
-        fingerprint = fingerprint,
+    private fun artifact(rawText: String?, fp: InferenceFingerprint = fingerprint) = InferenceArtifact(
+        fingerprint = fp,
         output = null,
         rawText = rawText,
         provider = ProviderMetadata(ProviderId("p"), ProviderKind.Local, ProviderPrivacyBoundary.localDevice(), modelId = "m1"),
@@ -119,6 +119,26 @@ class SqlDelightArtifactStoreTest {
             // The store's upsert references validation_json, so a successful write proves the column exists.
             store(driver).write(artifact("after migration"))
             assertEquals("after migration", store(driver).reader(fingerprint).first()?.rawText)
+        }
+    }
+
+    @Test
+    fun distinctFingerprints_doNotCollideOnTheKey() = runTest {
+        // null-vs-empty promptVersion (and separator-bearing values) must not share a PK.
+        val withNull = fingerprint.copy(promptVersion = null)
+        val withEmpty = fingerprint.copy(promptVersion = "")
+        val withPipe = fingerprint.copy(promptVersion = "a|b", outputVersion = "c")
+        val withShift = fingerprint.copy(promptVersion = "a", outputVersion = "b|c")
+        createFresh(tempDbPath()).use { driver ->
+            val s = store(driver)
+            s.write(artifact("from-null", withNull))
+            s.write(artifact("from-empty", withEmpty))
+            s.write(artifact("from-pipe", withPipe))
+            s.write(artifact("from-shift", withShift))
+            assertEquals("from-null", s.reader(withNull).first()?.rawText)
+            assertEquals("from-empty", s.reader(withEmpty).first()?.rawText)
+            assertEquals("from-pipe", s.reader(withPipe).first()?.rawText)
+            assertEquals("from-shift", s.reader(withShift).first()?.rawText)
         }
     }
 

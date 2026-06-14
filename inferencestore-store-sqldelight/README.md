@@ -39,6 +39,11 @@ The schema is versioned with SQLDelight migrations (`*.sqm`). `1.sqm` adds
 The migration is tested (`migration_addsValidationColumn`): a v1 database is upgraded and
 the new column verified.
 
+**Adding a migration:** edit the `.sq` to the new (latest) schema, add an `N.sqm` with the
+delta from version N, and add a runtime migration test. (`verifyMigrations` build-time
+enforcement requires committing a binary schema snapshot and is left off for this
+prototype — the runtime test is the guard.)
+
 ## Retention guidance
 
 The store does **not** auto-evict — retention is app-defined. Run a periodic cleanup, and

@@ -20,6 +20,7 @@ import dev.mattramotar.inferencestore.store.sqldelight.db.Route_attempt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.CoroutineContext
 
@@ -107,47 +108,58 @@ public class SqlDelightArtifactStore(
         )
     }
 
-    /** All persisted attempts for [providerId], most recent first. */
+    /** All persisted attempts for [providerId], most recent first. Rows with an unknown
+     *  outcome (e.g. a renamed enum) are skipped rather than failing the whole query. */
     public suspend fun attemptsFor(providerId: ProviderId): List<PersistedRouteAttempt> =
-        routes.selectByProvider(providerId.value).executeAsList().map { it.toAttempt() }
+        routes.selectByProvider(providerId.value).executeAsList().mapNotNull { it.toAttemptOrNull() }
 
     public suspend fun clearRouteAttempts() {
         routes.deleteAll()
     }
 
-    // A content-free, deterministic primary key for the fingerprint.
+    // A content-free, deterministic, COLLISION-PROOF primary key for the fingerprint:
+    // JSON-encoding the components escapes separators and distinguishes null from "",
+    // unlike a raw delimiter join.
     private fun fingerprintKey(fingerprint: InferenceFingerprint): String = with(fingerprint) {
-        listOf(
-            key.asString(), inputHash, promptVersion, outputVersion,
-            privacyClass, privacyPolicyVersion, policyVersion,
-        ).joinToString("|") { it ?: "" }
+        json.encodeToString(
+            listOf(key.asString(), inputHash, promptVersion, outputVersion, privacyClass, privacyPolicyVersion, policyVersion),
+        )
     }
 
-    private fun toArtifact(fingerprint: InferenceFingerprint, row: Inference_artifact): InferenceArtifact<Any> =
-        InferenceArtifact(
+    // A corrupt/forward-incompatible row (e.g. an enum renamed since it was written) must
+    // not crash the reader Flow — treat it as a miss.
+    private fun toArtifact(fingerprint: InferenceFingerprint, row: Inference_artifact): InferenceArtifact<Any>? {
+        val kind = enumOrNull<ProviderKind>(row.provider_kind) ?: return null
+        val execution = enumOrNull<ProviderExecutionBoundary>(row.boundary_execution) ?: return null
+        val trace = row.trace_json?.let { runCatching { json.decodeFromString(RouteTrace.serializer(), it) }.getOrNull() }
+        return InferenceArtifact(
             fingerprint = fingerprint,
             output = null, // typed output is re-decoded by the caller from rawText if needed
             rawText = row.raw_output,
             provider = ProviderMetadata(
                 providerId = ProviderId(row.provider_id),
-                providerKind = ProviderKind.valueOf(row.provider_kind),
-                boundary = ProviderPrivacyBoundary(
-                    id = ProviderPrivacyBoundaryId(row.boundary_id),
-                    execution = ProviderExecutionBoundary.valueOf(row.boundary_execution),
-                ),
+                providerKind = kind,
+                boundary = ProviderPrivacyBoundary(ProviderPrivacyBoundaryId(row.boundary_id), execution),
                 modelId = row.model_id,
             ),
-            trace = row.trace_json?.let { json.decodeFromString(RouteTrace.serializer(), it) },
+            trace = trace,
             createdAtMillis = row.created_at_epoch_ms,
             expiresAtMillis = row.expires_at_epoch_ms,
         )
+    }
 
-    private fun Route_attempt.toAttempt(): PersistedRouteAttempt = PersistedRouteAttempt(
-        requestId = request_id,
-        providerId = ProviderId(provider_id),
-        outcome = AttemptOutcome.valueOf(outcome),
-        modelId = model_id,
-        errorCategory = error_category?.let { ErrorCategory.valueOf(it) },
-        recordedAtEpochMs = recorded_at_epoch_ms,
-    )
+    private fun Route_attempt.toAttemptOrNull(): PersistedRouteAttempt? {
+        val parsedOutcome = enumOrNull<AttemptOutcome>(outcome) ?: return null
+        return PersistedRouteAttempt(
+            requestId = request_id,
+            providerId = ProviderId(provider_id),
+            outcome = parsedOutcome,
+            modelId = model_id,
+            errorCategory = error_category?.let { enumOrNull<ErrorCategory>(it) },
+            recordedAtEpochMs = recorded_at_epoch_ms,
+        )
+    }
+
+    private inline fun <reified T : Enum<T>> enumOrNull(name: String): T? =
+        runCatching { enumValueOf<T>(name) }.getOrNull()
 }
