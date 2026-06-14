@@ -1,0 +1,36 @@
+-- Persistent inference artifacts (storage-model.md). Holds only what privacy permits:
+-- raw_output / typed_output_json / trace_json are nullable so a redacted artifact
+-- persists without prompt or output content. (validation_json is added in migration 1.)
+CREATE TABLE inference_artifact (
+    fingerprint TEXT NOT NULL PRIMARY KEY,
+    key_namespace TEXT NOT NULL,
+    key_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    provider_kind TEXT NOT NULL,
+    boundary_id TEXT NOT NULL,
+    boundary_execution TEXT NOT NULL,
+    model_id TEXT,
+    raw_output TEXT,
+    typed_output_json TEXT,
+    trace_json TEXT,
+    validation_json TEXT,
+    created_at_epoch_ms INTEGER NOT NULL,
+    expires_at_epoch_ms INTEGER
+);
+
+upsert:
+INSERT OR REPLACE INTO inference_artifact(
+    fingerprint, key_namespace, key_id, provider_id, provider_kind,
+    boundary_id, boundary_execution, model_id, raw_output, typed_output_json,
+    trace_json, validation_json, created_at_epoch_ms, expires_at_epoch_ms
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectByFingerprint:
+SELECT * FROM inference_artifact WHERE fingerprint = ?;
+
+deleteByFingerprint:
+DELETE FROM inference_artifact WHERE fingerprint = ?;
+
+deleteAll:
+DELETE FROM inference_artifact;
