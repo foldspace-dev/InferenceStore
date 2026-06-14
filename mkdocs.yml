@@ -153,3 +153,4 @@ nav:
           - RFC-0004 Cache and source of truth: rfcs/RFC-0004-cache-and-source-of-truth.md
           - RFC-0005 Meeseeks model lifecycle: rfcs/RFC-0005-meeseeks-model-lifecycle.md
           - RFC-0006 Structured output: rfcs/RFC-0006-structured-output.md
+  - API reference: reference/api.md
