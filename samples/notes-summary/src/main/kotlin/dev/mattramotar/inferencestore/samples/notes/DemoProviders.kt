@@ -18,13 +18,14 @@ import io.ktor.utils.io.ByteReadChannel
  * An OpenAI-compatible provider backed by a mock HTTP engine that returns a canned
  * streamed completion, so the sample exercises the real adapter (request building +
  * SSE parsing) fully offline. Swap the [HttpClient] engine for ktor-client-cio /
- * okhttp to call a live endpoint. [summary] must contain no `"` or `\` (kept simple
- * so the hand-written SSE body stays valid JSON).
+ * okhttp to call a live endpoint.
  */
 public fun openAiCompatibleDemoProvider(
     summary: String = "Cloud summary: Q3 roadmap on track, demo Friday.",
 ): InferenceProvider {
-    val sse = "data: {\"choices\":[{\"delta\":{\"content\":\"$summary\"}}]}\n\ndata: [DONE]\n\n"
+    // Escape so any summary stays valid JSON in the hand-written SSE body.
+    val escaped = summary.replace("\\", "\\\\").replace("\"", "\\\"")
+    val sse = "data: {\"choices\":[{\"delta\":{\"content\":\"$escaped\"}}]}\n\ndata: [DONE]\n\n"
     val client = HttpClient(
         MockEngine {
             respond(
