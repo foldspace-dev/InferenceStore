@@ -11,7 +11,8 @@ so the first foreground request doesn't pay that cost (`meeseeks-integration.md`
   provider's default model).
 - `ProviderModelWarmer` — the Meeseeks-agnostic warmup logic: resolve the provider,
   check a precondition (it must be available), call `warmup`, and return a
-  `WarmupResult`. A throwing warmup is caught and recorded — never propagated.
+  `WarmupResult`. A non-cancellation warmup failure is caught and recorded;
+  `CancellationException` is propagated so structured-concurrency cancellation works.
 - `WarmupResult` / `WarmupStatus` — the recorded outcome: `Warmed`, `NotFound`
   (provider not registered), `Unsupported` (no `ProviderLifecycle`),
   `SkippedUnavailable` (precondition not met), or `Failed` (warmup threw).
@@ -34,8 +35,9 @@ Warming a model that isn't even available is wasted work, so the warmer checks
 availability first. When a [`ProviderInventory`](provider-inventory.md) is supplied,
 it prefers a **fresh** cached record (one whose `expiresAtMillis` hasn't passed) over
 a live probe — reusing what the inventory refresher already learned. With no usable
-cached record it falls back to a live `availability()` probe; a throwing probe is
-treated as "not available" and the warmup is skipped rather than crashing.
+cached record it falls back to a live `availability()` probe; a non-cancellation probe
+failure is treated as "not available" and the warmup is skipped rather than crashing.
+Probe cancellation is propagated.
 
 Device-level preconditions — battery acceptable, not thermally constrained, app
 recently launched — belong on the Meeseeks schedule (see below), not in the worker.
