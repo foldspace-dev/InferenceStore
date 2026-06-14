@@ -1,0 +1,73 @@
+site_name: InferenceStore
+site_description: Store-like inference orchestration for Kotlin Multiplatform
+repo_url: https://github.com/foldspace-dev/InferenceStore
+repo_name: foldspace-dev/InferenceStore
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  palette:
+    - scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+# Internal planning material is kept in the repo but out of the published site.
+exclude_docs: |
+  adr/
+  prd/
+  strategy/
+  agents/
+  issues/
+  00-source-notes.md
+  REVISION_NOTES.md
+
+nav:
+  - Home: index.md
+  - Get started:
+      - Quickstart: quickstart.md
+  - Concepts:
+      - Store: concepts/store.md
+      - Provider: concepts/provider.md
+      - Policy: concepts/policy.md
+      - Validator: concepts/validator.md
+      - Artifact store: concepts/artifact-store.md
+      - Monitor: concepts/monitor.md
+  - Guides:
+      - Writing a provider adapter: guides/writing-a-provider-adapter.md
+      - Security & privacy: guides/security-and-privacy.md
+  - Reference:
+      - Architecture: technical/architecture.md
+      - Event model: technical/event-model.md
+      - Routing policy: technical/routing-policy.md
+      - Privacy model: technical/privacy-model.md
+      - Storage model: technical/storage-model.md
+      - Timeout & retry: technical/timeout-retry-policy.md
+      - Error to fallback: technical/error-fallback-mapping.md
+      - Threading & dispatchers: technical/threading-dispatchers.md
+      - Provider adapters: technical/provider-adapters.md
+      - Observability & evals: technical/observability-evals.md
+      - Testing: technical/testing.md
+      - RFCs:
+          - RFC-0001 Core abstractions: rfcs/RFC-0001-core-abstractions.md
+          - RFC-0002 Provider adapter model: rfcs/RFC-0002-provider-adapter-model.md
+          - RFC-0003 Policy engine: rfcs/RFC-0003-policy-engine.md
+          - RFC-0004 Cache and source of truth: rfcs/RFC-0004-cache-and-source-of-truth.md
+          - RFC-0005 Meeseeks model lifecycle: rfcs/RFC-0005-meeseeks-model-lifecycle.md
+          - RFC-0006 Structured output: rfcs/RFC-0006-structured-output.md
