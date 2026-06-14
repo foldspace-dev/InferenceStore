@@ -69,7 +69,7 @@ samples/notes-summary
 
 ```text
 inferencestore-provider-firebase-android
-inferencestore-provider-apple-foundationmodels-ios
+inferencestore-provider-apple-foundation
 inferencestore-provider-llamatik
 inferencestore-store-sqldelight
 inferencestore-meeseeks

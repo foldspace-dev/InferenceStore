@@ -211,7 +211,7 @@ inferencestore-provider-openai-compatible
 inferencestore-provider-litertlm-android
 inferencestore-provider-litertlm-jvm
 inferencestore-provider-firebase-android
-inferencestore-provider-apple-foundationmodels-ios
+inferencestore-provider-apple-foundation
 inferencestore-provider-llamatik
 inferencestore-provider-cactus
 inferencestore-provider-mlc
