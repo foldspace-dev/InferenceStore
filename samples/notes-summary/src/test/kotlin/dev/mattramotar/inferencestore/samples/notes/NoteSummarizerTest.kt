@@ -2,6 +2,9 @@ package dev.mattramotar.inferencestore.samples.notes
 
 import dev.mattramotar.inferencestore.core.InferenceException
 import dev.mattramotar.inferencestore.core.InferenceStore
+import dev.mattramotar.inferencestore.core.event.InferenceEvent
+import dev.mattramotar.inferencestore.core.model.InferenceKey
+import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
@@ -9,6 +12,7 @@ import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import dev.mattramotar.inferencestore.core.provider.ProviderPrivacyBoundary
 import dev.mattramotar.inferencestore.core.provider.UnavailableReason
 import dev.mattramotar.inferencestore.testkit.fakeProvider
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -84,6 +88,19 @@ class NoteSummarizerTest {
         val store = InferenceStore.single(openAiCompatibleDemoProvider("Cloud summary: roadmap on track."))
         val result = NoteSummarizer(store).summarize(note, PrivacyPolicy.publicData())
         assertEquals("Cloud summary: roadmap on track.", result.output)
+    }
+
+    @Test
+    fun streaming_emitsTokensThenDone() = runTest {
+        // Backs the Quickstart streaming snippet: stream() is a cold flow of events.
+        val local = fakeProvider("on-device", ProviderKind.Local) {
+            tokens("Hel", "lo")
+            complete("Hello")
+        }
+        val store = InferenceStore.single(local)
+        val events = store.stream(InferenceRequest.text(InferenceKey("notes.summary", "demo"), "hi")).toList()
+        assertEquals(listOf("Hel", "lo"), events.filterIsInstance<InferenceEvent.Token>().map { it.text })
+        assertTrue(events.last() is InferenceEvent.Done<*>)
     }
 
     @Test
