@@ -1,6 +1,9 @@
 package dev.mattramotar.inferencestore.core.validation
 
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 
 /**
  * The outcome of validating a final model output (`caching-validation-dedupe.md`).
@@ -55,5 +58,48 @@ public object OutputValidators {
                 if (result is ValidationResult.Fail) return@OutputValidator result
             }
             ValidationResult.Pass
+        }
+
+    // Lenient JSON for post-hoc output checks: models often emit extra fields or
+    // slightly loose JSON, and validation should judge schema conformance, not style.
+    private val validationJson: Json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    /**
+     * Passes when the provider's raw output is syntactically well-formed JSON
+     * (structured-output post-hoc validation, RFC-0006). Inspects `rawText`, so it
+     * applies to any output type; a null `rawText` fails. Failure is [ErrorCategory.ParsingFailed]
+     * so it can repair on a schema-capable provider (`FallbackPolicy.repairEnabled`).
+     */
+    public fun wellFormedJson(): OutputValidator<Any> = OutputValidator { _, rawText ->
+        val text = rawText
+            ?: return@OutputValidator ValidationResult.Fail("no raw text to validate as JSON", ErrorCategory.ParsingFailed)
+        try {
+            validationJson.parseToJsonElement(text)
+            ValidationResult.Pass
+        } catch (_: SerializationException) {
+            ValidationResult.Fail("output is not well-formed JSON", ErrorCategory.ParsingFailed)
+        }
+    }
+
+    /**
+     * Passes when the provider's raw output decodes to [Schema] via [serializer]
+     * (serializer-based schema validation, RFC-0006) — well-formed AND
+     * schema-conformant. Inspects `rawText`; a null `rawText` fails. Failure is
+     * [ErrorCategory.ParsingFailed] so malformed/non-conforming local output can
+     * repair on a schema-capable provider (`FallbackPolicy.repairEnabled`).
+     */
+    public fun <Schema : Any> validJson(serializer: KSerializer<Schema>): OutputValidator<Any> =
+        OutputValidator { _, rawText ->
+            val text = rawText
+                ?: return@OutputValidator ValidationResult.Fail("no raw text to validate as JSON", ErrorCategory.ParsingFailed)
+            try {
+                validationJson.decodeFromString(serializer, text)
+                ValidationResult.Pass
+            } catch (_: SerializationException) {
+                ValidationResult.Fail(
+                    "output is not valid JSON for ${serializer.descriptor.serialName}",
+                    ErrorCategory.ParsingFailed,
+                )
+            }
         }
 }
