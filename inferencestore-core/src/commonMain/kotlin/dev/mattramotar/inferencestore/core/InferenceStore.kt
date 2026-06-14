@@ -28,6 +28,7 @@ import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
 import dev.mattramotar.inferencestore.core.provider.ProviderId
 import dev.mattramotar.inferencestore.core.provider.ProviderEvent
 import dev.mattramotar.inferencestore.core.provider.toProviderRequest
+import dev.mattramotar.inferencestore.core.validation.ValidationResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.emitAll
@@ -253,6 +254,29 @@ internal class RoutedInferenceStore(
                             result = AttemptResult.Failure(ErrorCategory.Unknown, cause = throwable)
                         },
                 )
+
+                // Final-output validation (OSS-17): a provider output that fails the
+                // request validator becomes a validation failure for this attempt, so
+                // the canonical fallback path decides repair (FallbackPolicy.repairEnabled).
+                val produced = result
+                val validator = request.validator
+                if (produced is AttemptResult.Success && validator != null) {
+                    var validatorError: Throwable? = null
+                    val verdict = try {
+                        validator.validate(produced.output, produced.rawText)
+                    } catch (cancellation: CancellationException) {
+                        throw cancellation
+                    } catch (throwable: Throwable) {
+                        // A validator that throws fails the attempt defensively, like a
+                        // throwing provider — it must not escape and crash the request.
+                        validatorError = throwable
+                        ValidationResult.Fail("validator threw an exception", ErrorCategory.Unknown)
+                    }
+                    emit(InferenceEvent.ValidationCompleted(requestId, verdict))
+                    if (verdict is ValidationResult.Fail) {
+                        result = AttemptResult.Failure(verdict.category, message = verdict.reason, cause = validatorError)
+                    }
+                }
 
                 val success = result as? AttemptResult.Success
                 if (success != null) {

@@ -38,6 +38,11 @@ public class EventAssertions(private val events: List<InferenceEvent<*>>) {
         if (e !is InferenceEvent.Partial<*>) fail("expected Partial but was $e")
     }
 
+    public fun validationCompleted() {
+        val e = take("ValidationCompleted")
+        if (e !is InferenceEvent.ValidationCompleted) fail("expected ValidationCompleted but was $e")
+    }
+
     public fun providerAttemptCompleted() {
         val e = take("ProviderAttemptCompleted")
         if (e !is InferenceEvent.ProviderAttemptCompleted) fail("expected ProviderAttemptCompleted but was $e")

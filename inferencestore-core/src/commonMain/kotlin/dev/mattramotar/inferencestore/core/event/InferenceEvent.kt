@@ -4,6 +4,7 @@ import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.ProviderId
+import dev.mattramotar.inferencestore.core.validation.ValidationResult
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
 import kotlin.time.Duration
@@ -52,11 +53,10 @@ public data class InferenceError(
 /**
  * Canonical stream events (see `event-model.md`).
  *
- * Covers the single-provider lifecycle plus the fallback/retry events and the
- * [RouteTrace] on terminal events. The routing/cache/validation events
- * (`CacheChecked`, `ProvidersEvaluated`, `RouteSelected`, `ValidationCompleted`,
- * `ArtifactStored`) are emitted by the features that own them (OSS-13 / OSS-25 /
- * OSS-8) and land with those issues.
+ * Covers the single-provider lifecycle, fallback/retry, validation, and the
+ * [RouteTrace] on terminal events. The remaining routing/cache events
+ * (`CacheChecked`, `ProvidersEvaluated`, `RouteSelected`, `ArtifactStored`) are
+ * emitted by the features that own them (OSS-25 / OSS-19) and land with those issues.
  */
 public sealed interface InferenceEvent<out Output : Any> {
     public data class Started(
@@ -78,6 +78,12 @@ public sealed interface InferenceEvent<out Output : Any> {
         public val requestId: RequestId,
         public val value: Output,
     ) : InferenceEvent<Output>
+
+    /** Emitted after final-output validation runs for an attempt (OSS-17). */
+    public data class ValidationCompleted(
+        public val requestId: RequestId,
+        public val result: ValidationResult,
+    ) : InferenceEvent<Nothing>
 
     public data class ProviderAttemptCompleted(
         public val requestId: RequestId,
