@@ -1,6 +1,25 @@
 # LiteRT-LM adapter plan
 
-Updated: 2026-06-13
+Updated: 2026-06-14
+
+## Implementation status
+
+Shipped in **OSS-29** as a single module, `inferencestore-provider-litertlm-android`
+(the "collapse into one module with platform source sets" path below). The rest of this
+document is the original plan; it reconciles with what shipped as follows:
+
+- **Runtime-injection.** The provider takes a `LiteRtLmRuntime` interface that the
+  integrator implements against the native library, so the adapter compiles and is fully
+  tested (availability, capability, streaming, error mapping, cancellation, privacy
+  boundary) without the large native dependency or a model file.
+- **Capabilities shipped:** `TextGeneration`, `Chat`, `Streaming`, `Offline`. (The
+  aspirational `LocalExecution` capability below is not a `Capability` member; the local
+  nature is expressed by the `LocalProcess` privacy boundary instead.)
+- **Availability reasons** map through `LiteRtLmFailure` to the shipped
+  `UnavailableReason` enum (`ModelMissing` / `Unsupported` / `Unknown`); the finer-grained
+  reasons in the table below collapse to `Unknown` for now (see ADR-0005 risks).
+- **Download, warmup, telemetry** are Meeseeks lifecycle workers (OSS-35 / OSS-38 /
+  OSS-39), not adapter responsibilities — as planned in *Deferred*.
 
 ## Decision
 
