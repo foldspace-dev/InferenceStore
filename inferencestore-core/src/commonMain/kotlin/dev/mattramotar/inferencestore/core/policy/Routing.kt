@@ -31,7 +31,17 @@ public fun interface InferencePolicy {
     public fun selectRoute(candidates: List<ProviderCandidate>): InferenceRoute
 }
 
-/** The five built-in MVP policy presets (`routing-policy.md`). */
+/**
+ * The five built-in MVP policy presets (`routing-policy.md`).
+ *
+ * Presets route by deployment kind: local tier = [ProviderKind.Local] /
+ * [ProviderKind.Platform], cloud tier = [ProviderKind.Cloud] /
+ * [ProviderKind.Remote]. [ProviderKind.Test] is deliberately not a routable
+ * deployment kind, so a Test-kind provider is never selected by a preset — a
+ * routing test should declare the kind it simulates (Local/Cloud), and
+ * [dev.mattramotar.inferencestore.core.InferenceStore.single] routes a provider
+ * of any kind.
+ */
 public object Policies {
     private val localKinds: Set<ProviderKind> = setOf(ProviderKind.Local, ProviderKind.Platform)
     private val cloudKinds: Set<ProviderKind> = setOf(ProviderKind.Cloud, ProviderKind.Remote)

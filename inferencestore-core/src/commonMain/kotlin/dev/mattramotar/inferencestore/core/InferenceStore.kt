@@ -111,6 +111,15 @@ internal class RoutedInferenceStore(
     private val config: InferenceExecutionConfig,
 ) : InferenceStore {
 
+    init {
+        // ProviderId is the key the routing and trace logic dedupes on; duplicates
+        // would corrupt candidate/route/rejected bookkeeping, so reject them early.
+        val duplicates = providers.groupingBy { it.id }.eachCount().filterValues { it > 1 }.keys
+        require(duplicates.isEmpty()) {
+            "duplicate provider id(s): ${duplicates.map { it.value }}"
+        }
+    }
+
     override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> =
         flow {
             val requestId = RequestId(request.key.asString())
@@ -119,38 +128,48 @@ internal class RoutedInferenceStore(
             val providerRequest = request.toProviderRequest()
             emit(InferenceEvent.Started(requestId, request.key))
 
+            // A provider that throws while being probed is treated as unavailable
+            // so the policy can route around it instead of crashing the request.
             val candidates = providers.map { provider ->
-                ProviderCandidate(
-                    provider = provider,
-                    available = provider.availability(context) == ProviderAvailability.Available,
-                    supported = provider.capabilities(request, context).supported,
-                )
+                val available = probe { provider.availability(context) == ProviderAvailability.Available }
+                val supported = available && probe { provider.capabilities(request, context).supported }
+                ProviderCandidate(provider, available, supported)
             }
-            val route = (request.policy ?: policy).selectRoute(candidates)
+            val candidateIds = candidates.mapTo(mutableSetOf()) { it.provider.id }
+            val selected = (request.policy ?: policy).selectRoute(candidates)
+            val policyId = selected.policyId
+            // The route is authoritative only over providers the engine actually
+            // probed: a custom policy cannot smuggle in an unvetted provider.
+            val route = selected.orderedProviders.filter { it.id in candidateIds }
 
             val attempts = mutableListOf<ProviderAttemptTrace>()
             val fallbackReasons = mutableListOf<FallbackReason>()
             // Providers the policy left out of the route, with why they were dropped.
-            val routedIds = route.orderedProviders.mapTo(mutableSetOf()) { it.id }
+            val routedIds = route.mapTo(mutableSetOf()) { it.id }
             val rejected = candidates.filterNot { it.provider.id in routedIds }.map { candidate ->
                 val reason = when {
                     !candidate.available -> FallbackReason.ProviderUnavailable
                     !candidate.supported -> FallbackReason.CapabilityUnsupported
+                    // Available and capable, but the active policy forbids this provider
+                    // (e.g. a cloud provider under localOnly). With the MVP presets this
+                    // only fires for a categorical kind exclusion, so "using it would
+                    // violate the policy" is accurate. OSS-15 privacy denials are a
+                    // subset of this reason — do not assume it means only tiering.
                     else -> FallbackReason.PolicyViolation
                 }
                 RejectedProviderTrace(candidate.provider.id.value, reason)
             }
 
-            if (route.orderedProviders.isEmpty()) {
+            if (route.isEmpty()) {
                 emit(
                     InferenceEvent.Failed(
                         requestId,
-                        InferenceError(ErrorCategory.ProviderUnavailable, "no provider satisfied policy '${route.policyId}'"),
+                        InferenceError(ErrorCategory.ProviderUnavailable, "no provider satisfied policy '$policyId'"),
                         trace = RouteTrace(
                             requestId = requestId.value,
                             key = key,
                             finalStatus = FinalStatus.Failed,
-                            policyId = route.policyId,
+                            policyId = policyId,
                             rejectedProviders = rejected,
                         ),
                     ),
@@ -158,8 +177,8 @@ internal class RoutedInferenceStore(
                 return@flow
             }
 
-            val lastIndex = route.orderedProviders.lastIndex
-            for ((index, provider) in route.orderedProviders.withIndex()) {
+            val lastIndex = route.lastIndex
+            for ((index, provider) in route.withIndex()) {
                 val attemptNumber = index + 1
                 emit(InferenceEvent.ProviderAttemptStarted(requestId, ProviderAttemptSummary(provider.id, attemptNumber)))
 
@@ -207,7 +226,7 @@ internal class RoutedInferenceStore(
                                     requestId = requestId.value,
                                     key = key,
                                     finalStatus = FinalStatus.Succeeded,
-                                    policyId = route.policyId,
+                                    policyId = policyId,
                                     attempts = attempts.toList(),
                                     rejectedProviders = rejected,
                                     fallbackReasons = fallbackReasons.toList(),
@@ -231,7 +250,7 @@ internal class RoutedInferenceStore(
                 if (index < lastIndex && isFallbackEligible(category)) {
                     val reason = toFallbackReason(category)
                     fallbackReasons += reason
-                    emit(InferenceEvent.FallbackStarted(requestId, reason, route.orderedProviders[index + 1].id))
+                    emit(InferenceEvent.FallbackStarted(requestId, reason, route[index + 1].id))
                 } else {
                     emit(
                         InferenceEvent.Failed(
@@ -241,7 +260,7 @@ internal class RoutedInferenceStore(
                                 requestId = requestId.value,
                                 key = key,
                                 finalStatus = FinalStatus.Failed,
-                                policyId = route.policyId,
+                                policyId = policyId,
                                 attempts = attempts.toList(),
                                 rejectedProviders = rejected,
                                 fallbackReasons = fallbackReasons.toList(),
@@ -265,6 +284,20 @@ internal class RoutedInferenceStore(
         }
     }
 }
+
+/**
+ * Runs a provider availability/capability probe defensively: a probe that throws
+ * is treated as "no" (provider unavailable/incapable) rather than failing the
+ * whole request, so routing can fall back. Cancellation still propagates.
+ */
+private suspend fun probe(block: suspend () -> Boolean): Boolean =
+    try {
+        block()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        false
+    }
 
 /** Whether a provider failure of [category] should trigger fallback (OSS-16 owns the canonical table). */
 private fun isFallbackEligible(category: ErrorCategory): Boolean = when (category) {

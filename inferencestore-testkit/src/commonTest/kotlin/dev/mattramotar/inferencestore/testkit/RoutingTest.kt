@@ -5,6 +5,7 @@ import dev.mattramotar.inferencestore.core.event.FallbackReason
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.InferenceRoute
 import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /** Exercises the five built-in policy presets and the routing/fallback engine (OSS-13). */
@@ -217,6 +219,82 @@ class RoutingTest {
             rejected("local", FallbackReason.ProviderUnavailable)
         }
         local.assertInvocations(0)
+    }
+
+    @Test
+    fun providerThatThrowsDuringProbe_isTreatedAsUnavailable() = runTest {
+        val local = fakeProvider("local", ProviderKind.Local) {
+            probeError = IllegalStateException("probe boom")
+            complete("local")
+        }
+        val cloud = fakeProvider("cloud", ProviderKind.Cloud) { complete("cloud") }
+        val store = InferenceStore.build {
+            provider(local)
+            provider(cloud)
+            policy = Policies.preferLocalThenCloud()
+        }
+
+        // A throwing probe must not crash the request — it routes around it.
+        val result = store.generate(request)
+        assertEquals("cloud", result.output)
+        assertRoute(result.trace) {
+            completedWith("cloud")
+            didNotAttempt("local")
+            rejected("local", FallbackReason.ProviderUnavailable)
+        }
+        local.assertInvocations(0)
+    }
+
+    @Test
+    fun customPolicyCannotInjectUnprobedProvider() = runTest {
+        val real = fakeProvider("real", ProviderKind.Local) { complete("real") }
+        // 'ghost' is never registered with the store, so it was never probed.
+        val ghost = fakeProvider("ghost", ProviderKind.Cloud) { complete("ghost") }
+        val store = InferenceStore.build {
+            provider(real)
+            policy = InferencePolicy { _ -> InferenceRoute("rogue", listOf(ghost, real)) }
+        }
+
+        val result = store.generate(request)
+        assertEquals("real", result.output)
+        assertRoute(result.trace) {
+            completedWith("real")
+            didNotAttempt("ghost")
+        }
+        ghost.assertInvocations(0)
+    }
+
+    @Test
+    fun testKindProvider_isNotRoutedByPresets_butWorksViaSingle() = runTest {
+        // fakeProvider defaults to ProviderKind.Test, which presets never select.
+        val provider = fakeProvider("t") { complete("via-single") }
+
+        val preset = InferenceStore.build {
+            provider(provider)
+            policy = Policies.preferLocalThenCloud()
+        }
+        val last = preset.stream(request).toList().last()
+        assertTrue(last is InferenceEvent.Failed)
+        assertEquals(ErrorCategory.ProviderUnavailable, last.error.category)
+        assertRoute(last.trace) {
+            didNotAttempt("t")
+            rejected("t", FallbackReason.PolicyViolation)
+        }
+
+        // single() routes a provider of any kind.
+        assertEquals("via-single", InferenceStore.single(provider).generate(request).output)
+    }
+
+    @Test
+    fun duplicateProviderIds_areRejectedAtBuild() {
+        val a = fakeProvider("dup", ProviderKind.Local) { complete("a") }
+        val b = fakeProvider("dup", ProviderKind.Cloud) { complete("b") }
+        assertFailsWith<IllegalArgumentException> {
+            InferenceStore.build {
+                provider(a)
+                provider(b)
+            }
+        }
     }
 
     @Test
