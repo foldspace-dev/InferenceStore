@@ -22,6 +22,7 @@ include(
     ":inferencestore-testkit",
     ":inferencestore-provider-openai-compatible",
     ":inferencestore-provider-litertlm-android",
+    ":inferencestore-provider-firebase-android",
     ":samples:notes-summary",
 )
 
