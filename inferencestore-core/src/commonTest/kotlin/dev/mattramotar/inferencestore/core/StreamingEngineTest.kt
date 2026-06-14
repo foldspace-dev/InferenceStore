@@ -55,10 +55,12 @@ class StreamingEngineTest {
         }
     }
 
+    // Local boundary so these failure-handling tests are privacy-neutral; the
+    // privacy gate's interaction with cloud providers is covered in PrivacyTest.
     private val failing = object : InferenceProvider {
         override val id = ProviderId("boom")
-        override val kind = ProviderKind.Cloud
-        override val boundary = ProviderPrivacyBoundary.thirdPartyCloud("test")
+        override val kind = ProviderKind.Test
+        override val boundary = ProviderPrivacyBoundary.localDevice()
         override suspend fun availability(context: InferenceContext) = ProviderAvailability.Available
         override suspend fun capabilities(request: InferenceRequest<*>, context: InferenceContext) =
             CapabilityReport(supported = true, capabilities = setOf(Capability.TextGeneration))
@@ -73,8 +75,8 @@ class StreamingEngineTest {
 
     private val throwing = object : InferenceProvider {
         override val id = ProviderId("throws")
-        override val kind = ProviderKind.Cloud
-        override val boundary = ProviderPrivacyBoundary.thirdPartyCloud("test")
+        override val kind = ProviderKind.Test
+        override val boundary = ProviderPrivacyBoundary.localDevice()
         override suspend fun availability(context: InferenceContext) = ProviderAvailability.Available
         override suspend fun capabilities(request: InferenceRequest<*>, context: InferenceContext) =
             CapabilityReport(supported = true, capabilities = setOf(Capability.TextGeneration))

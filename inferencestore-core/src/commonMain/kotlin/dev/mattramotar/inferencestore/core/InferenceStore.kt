@@ -15,11 +15,15 @@ import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.InferenceRoute
 import dev.mattramotar.inferencestore.core.policy.Policies
+import dev.mattramotar.inferencestore.core.policy.PolicyViolation
+import dev.mattramotar.inferencestore.core.policy.PrivacyDecision
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
+import dev.mattramotar.inferencestore.core.policy.allowsProvider
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
 import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
+import dev.mattramotar.inferencestore.core.provider.ProviderId
 import dev.mattramotar.inferencestore.core.provider.ProviderEvent
 import dev.mattramotar.inferencestore.core.provider.toProviderRequest
 import kotlinx.coroutines.flow.Flow
@@ -128,19 +132,38 @@ internal class RoutedInferenceStore(
             val providerRequest = request.toProviderRequest()
             emit(InferenceEvent.Started(requestId, request.key))
 
-            // A provider that throws while being probed is treated as unavailable
-            // so the policy can route around it instead of crashing the request.
+            // Privacy gate (privacy-model.md): evaluated BEFORE any provider work.
+            // A denial is terminal for that provider and routing policy cannot
+            // override it, so privacy-denied providers are never probed nor routed.
+            val privacyDenials = mutableMapOf<ProviderId, PolicyViolation>()
             val candidates = providers.map { provider ->
-                val available = probe { provider.availability(context) == ProviderAvailability.Available }
-                val supported = available && probe { provider.capabilities(request, context).supported }
-                ProviderCandidate(provider, available, supported)
+                when (val decision = request.privacy.allowsProvider(provider.id, provider.boundary)) {
+                    is PrivacyDecision.Deny -> {
+                        privacyDenials[provider.id] = decision.violation
+                        ProviderCandidate(provider, available = false, supported = false)
+                    }
+                    // A provider that throws while being probed is treated as unavailable
+                    // so the policy can route around it instead of crashing the request.
+                    PrivacyDecision.Allow -> {
+                        val available = probe { provider.availability(context) == ProviderAvailability.Available }
+                        val supported = available && probe { provider.capabilities(request, context).supported }
+                        ProviderCandidate(provider, available, supported)
+                    }
+                }
             }
             val candidateIds = candidates.mapTo(mutableSetOf()) { it.provider.id }
-            val selected = (request.policy ?: policy).selectRoute(candidates)
+            // The policy may only choose among routable candidates: probed available +
+            // supported and privacy-allowed. Privacy-denied providers are already
+            // marked unavailable, but excluding them by id makes the intent explicit.
+            val routableCandidates = candidates.filter {
+                it.available && it.supported && it.provider.id !in privacyDenials
+            }
+            val selected = (request.policy ?: policy).selectRoute(routableCandidates)
             val policyId = selected.policyId
-            // The route is authoritative only over providers the engine actually
-            // probed: a custom policy cannot smuggle in an unvetted provider.
-            val route = selected.orderedProviders.filter { it.id in candidateIds }
+            // Backstop: the route is authoritative only over providers the engine
+            // probed AND that passed the privacy gate, so neither a custom policy nor a
+            // probe gap can route to an unvetted or privacy-denied provider.
+            val route = selected.orderedProviders.filter { it.id in candidateIds && it.id !in privacyDenials }
 
             val attempts = mutableListOf<ProviderAttemptTrace>()
             val fallbackReasons = mutableListOf<FallbackReason>()
@@ -148,27 +171,37 @@ internal class RoutedInferenceStore(
             val routedIds = route.mapTo(mutableSetOf()) { it.id }
             val rejected = candidates.filterNot { it.provider.id in routedIds }.map { candidate ->
                 val reason = when {
+                    // Privacy denial is checked first: a denied provider is also
+                    // marked unavailable, but the security-relevant reason is privacy.
+                    candidate.provider.id in privacyDenials -> FallbackReason.PolicyViolation
                     !candidate.available -> FallbackReason.ProviderUnavailable
                     !candidate.supported -> FallbackReason.CapabilityUnsupported
                     // Available and capable, but the active policy forbids this provider
                     // (e.g. a cloud provider under localOnly). With the MVP presets this
                     // only fires for a categorical kind exclusion, so "using it would
-                    // violate the policy" is accurate. OSS-15 privacy denials are a
-                    // subset of this reason — do not assume it means only tiering.
+                    // violate the policy" is accurate.
                     else -> FallbackReason.PolicyViolation
                 }
                 RejectedProviderTrace(candidate.provider.id.value, reason)
             }
 
             if (route.isEmpty()) {
+                // PrivacyDenied only when privacy blocked every provider; a mix where
+                // a privacy-allowed provider was merely unavailable is a plain failure.
+                val privacyBlocked = providers.isNotEmpty() && privacyDenials.size == providers.size
+                val error = if (privacyBlocked) {
+                    InferenceError(ErrorCategory.PolicyViolation, "privacy policy denied all candidate providers")
+                } else {
+                    InferenceError(ErrorCategory.ProviderUnavailable, "no provider satisfied policy '$policyId'")
+                }
                 emit(
                     InferenceEvent.Failed(
                         requestId,
-                        InferenceError(ErrorCategory.ProviderUnavailable, "no provider satisfied policy '$policyId'"),
+                        error,
                         trace = RouteTrace(
                             requestId = requestId.value,
                             key = key,
-                            finalStatus = FinalStatus.Failed,
+                            finalStatus = if (privacyBlocked) FinalStatus.PrivacyDenied else FinalStatus.Failed,
                             policyId = policyId,
                             rejectedProviders = rejected,
                         ),

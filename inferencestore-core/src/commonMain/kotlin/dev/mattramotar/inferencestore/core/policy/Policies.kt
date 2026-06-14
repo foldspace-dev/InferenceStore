@@ -2,31 +2,7 @@ package dev.mattramotar.inferencestore.core.policy
 
 import kotlin.time.Duration
 
-/**
- * Privacy policy placeholder.
- *
- * OSS-15 implements the canonical model from `privacy-model.md` —
- * `CloudPermission`, `PersistencePermission`, `TelemetryPermission`,
- * provider-boundary checks, and execution-controller enforcement. This slice
- * carries the [privacyClass] so the request model is type-complete.
- */
-public data class PrivacyPolicy(
-    public val privacyClass: PrivacyClass = PrivacyClass.Personal,
-) {
-    public companion object {
-        /**
-         * Strict default per `privacy-model.md`: `Personal` data, cloud denied,
-         * no prompt/output persistence. Full enforcement lands in OSS-15.
-         */
-        public val Default: PrivacyPolicy = PrivacyPolicy(PrivacyClass.Personal)
-
-        /** Convenience for harmless public/demo content; production should be explicit. */
-        public fun publicData(): PrivacyPolicy = PrivacyPolicy(PrivacyClass.Public)
-    }
-}
-
-/** Canonical privacy classes (`privacy-model.md`). `Custom(value)` arrives with OSS-15. */
-public enum class PrivacyClass { Public, Internal, Personal, Sensitive, LocalOnly }
+// PrivacyPolicy / PrivacyClass and the privacy enforcement gate live in Privacy.kt (OSS-15).
 
 /**
  * Timeout policy placeholder. OSS-18 adds the availability / time-to-first-token /

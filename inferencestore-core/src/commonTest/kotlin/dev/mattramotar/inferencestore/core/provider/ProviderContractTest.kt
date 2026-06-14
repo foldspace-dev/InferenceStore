@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ProviderContractTest {
@@ -74,7 +75,8 @@ class ProviderContractTest {
     @Test
     fun availabilityAndBoundary() = runTest {
         assertEquals(ProviderAvailability.Available, echo.availability(InferenceContext()))
-        assertTrue(echo.boundary.isLocal)
+        assertEquals(ProviderExecutionBoundary.LocalProcess, echo.boundary.execution)
+        assertTrue(!echo.boundary.isCloudLike)
         assertEquals(ProviderKind.Test, echo.kind)
     }
 
@@ -83,6 +85,20 @@ class ProviderContractTest {
         val report = echo.capabilities(InferenceRequest.text(key, "hi"), InferenceContext())
         assertTrue(report.supported)
         assertTrue(Capability.Streaming in report.capabilities)
+    }
+
+    @Test
+    fun cloudBoundaryFactories_rejectBlankVendor() {
+        // A blank vendor would collide boundary ids and undermine ApprovedBoundaries.
+        assertFailsWith<IllegalArgumentException> { ProviderPrivacyBoundary.thirdPartyCloud("") }
+        assertFailsWith<IllegalArgumentException> { ProviderPrivacyBoundary.platform("  ") }
+        assertFailsWith<IllegalArgumentException> { ProviderPrivacyBoundary.platformHybrid("") }
+    }
+
+    @Test
+    fun appBackend_normalizesBlankVendorToNull() {
+        assertEquals(ProviderPrivacyBoundary.appBackend(null).id, ProviderPrivacyBoundary.appBackend("").id)
+        assertEquals(null, ProviderPrivacyBoundary.appBackend("  ").vendor)
     }
 
     @Test
