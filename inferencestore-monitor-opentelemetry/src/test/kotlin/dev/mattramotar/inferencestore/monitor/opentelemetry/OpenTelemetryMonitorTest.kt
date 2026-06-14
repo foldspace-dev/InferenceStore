@@ -68,6 +68,7 @@ class OpenTelemetryMonitorTest {
 
         val span = span()
         assertEquals(StatusCode.ERROR, span.status.statusCode)
+        assertEquals("Failed", span.attributes.get(OpenTelemetryMonitor.FINAL_STATUS)) // consistent terminal schema
         assertEquals("RateLimited", span.attributes.get(OpenTelemetryMonitor.ERROR_CATEGORY))
     }
 

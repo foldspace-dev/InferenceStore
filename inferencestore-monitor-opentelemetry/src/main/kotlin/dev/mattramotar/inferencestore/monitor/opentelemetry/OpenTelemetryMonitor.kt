@@ -1,5 +1,6 @@
 package dev.mattramotar.inferencestore.monitor.opentelemetry
 
+import dev.mattramotar.inferencestore.core.event.FinalStatus
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.monitor.InferenceMonitor
 import dev.mattramotar.inferencestore.core.monitor.MonitorEvent
@@ -102,6 +103,8 @@ public class OpenTelemetryMonitor(private val tracer: Tracer) : InferenceMonitor
             is MonitorEvent.RequestFailed ->
                 spans.remove(event.requestId)?.apply {
                     setStatus(StatusCode.ERROR)
+                    // Keep the terminal attribute schema consistent with RequestCompleted.
+                    setAttribute(FINAL_STATUS, FinalStatus.Failed.name)
                     setAttribute(ERROR_CATEGORY, event.error.name)
                     end()
                 }
