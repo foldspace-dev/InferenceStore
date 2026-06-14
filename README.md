@@ -8,6 +8,12 @@ The core thesis:
 
 > App developers should call one inference API and get policy-driven routing, fallback, validation, caching, deduplication, observability, and background model lifecycle management — without hard-coding every model/runtime/provider decision into feature code.
 
+## Quickstart
+
+New here? Start with the [Quickstart](docs/quickstart.md) — install to a first
+policy-routed request — and run the [`samples/notes-summary`](samples/notes-summary)
+demo: `./gradlew :samples:notes-summary:run`.
+
 ## What changed in this revision
 
 This package now incorporates the planning critique:
