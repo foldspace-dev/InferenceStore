@@ -61,7 +61,7 @@ class MemoryInferenceCacheTest {
     }
 
     @Test
-    fun staleWhileRevalidate_returnsExpiredArtifact() = runTest {
+    fun staleWhileRevalidate_servesStaleOnceThenEvicts() = runTest {
         val cache = MemoryInferenceCache(testTimeSource)
         val swr = CachePolicy(
             read = CacheAccess.Allow,
@@ -72,7 +72,8 @@ class MemoryInferenceCacheTest {
         val f = fp("k", "1")
         cache.write(artifact(f, "stale"), swr)
         delay(2.minutes)
-        assertEquals("stale", cache.read(f, OutputSpec.Text, swr)?.output)
+        assertEquals("stale", cache.read(f, OutputSpec.Text, swr)?.output) // served stale once
+        assertNull(cache.read(f, OutputSpec.Text, swr)) // then evicted -> next read re-fetches
     }
 
     @Test

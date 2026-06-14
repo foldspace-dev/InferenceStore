@@ -17,6 +17,10 @@ import kotlin.time.TimeSource
  * [InferenceArtifact.createdAtMillis]/[InferenceArtifact.expiresAtMillis] are for
  * persistent stores and are not required here.
  *
+ * An expired entry is evicted on read. With `allowStaleWhileRevalidate` it is served
+ * stale exactly ONCE (then dropped, so the next read re-fetches) — staleness is
+ * bounded to one serve since there is no background revalidation yet.
+ *
  * Concurrency: a [Mutex] guards the map, so reads/writes are coroutine-safe. The
  * store is unbounded unless [maxEntries] is set, in which case the oldest entry is
  * evicted (insertion order) when the cap is exceeded — suitable for the bounded
@@ -46,11 +50,13 @@ public class MemoryInferenceCache(
         policy: CachePolicy,
     ): InferenceArtifact<Output>? = mutex.withLock {
         val entry = entries[fingerprint] ?: return@withLock null
-        if (entry.expiresAt?.hasPassedNow() == true && !policy.allowStaleWhileRevalidate) {
-            // Expired and the caller does not tolerate stale → evict and miss, so the
-            // engine re-fetches from a provider.
+        if (entry.expiresAt?.hasPassedNow() == true) {
+            // Expired → evict either way. Without stale tolerance this is a miss so the
+            // engine re-fetches; with allowStaleWhileRevalidate we serve the stale value
+            // this once, and the eviction means the next read re-fetches (bounded
+            // staleness — there is no background revalidation yet).
             entries.remove(fingerprint)
-            return@withLock null
+            if (!policy.allowStaleWhileRevalidate) return@withLock null
         }
         @Suppress("UNCHECKED_CAST")
         entry.artifact as InferenceArtifact<Output>

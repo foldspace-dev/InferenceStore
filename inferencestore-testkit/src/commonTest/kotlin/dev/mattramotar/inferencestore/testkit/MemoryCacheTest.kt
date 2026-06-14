@@ -2,12 +2,15 @@ package dev.mattramotar.inferencestore.testkit
 
 import dev.mattramotar.inferencestore.core.InferenceStore
 import dev.mattramotar.inferencestore.core.cache.MemoryInferenceCache
+import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.model.OutputSpec
 import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
 import dev.mattramotar.inferencestore.core.policy.PersistencePermission
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
+import dev.mattramotar.inferencestore.core.provider.Capability
 import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -15,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.testTimeSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
@@ -75,10 +79,15 @@ class MemoryCacheTest {
         )
         store.generate(req(swr))
         delay(2.minutes)
-        val r = store.generate(req(swr))
-        assertEquals("ok", r.output)
-        assertTrue(r.trace?.servedFromCache == true)
-        provider.assertInvocations(1) // stale served, no re-fetch
+        val stale = store.generate(req(swr))
+        assertEquals("ok", stale.output)
+        assertTrue(stale.trace?.servedFromCache == true)
+        provider.assertInvocations(1) // stale served once, no re-fetch yet
+        // The stale serve evicted the entry, so the next call re-fetches (bounded staleness).
+        val fresh = store.generate(req(swr))
+        assertEquals("ok", fresh.output)
+        assertFalse(fresh.trace?.servedFromCache == true)
+        provider.assertInvocations(2)
     }
 
     @Test
@@ -106,6 +115,31 @@ class MemoryCacheTest {
         store.generate(req(CachePolicy.readWrite()))
         cache.clearAll()
         store.generate(req(CachePolicy.readWrite()))
+        provider.assertInvocations(2)
+    }
+
+    @Test
+    fun customOutput_isNotCached() = runTest {
+        // A custom parser has no stable type identity, so the engine never caches it
+        // (avoids serving a wrongly-typed artifact). Each call hits the provider.
+        val cache = MemoryInferenceCache(testTimeSource)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            capabilities += Capability.StructuredOutput
+            complete("ok")
+        }
+        val store = InferenceStore.build {
+            provider(provider)
+            this.cache = cache
+        }
+        val customReq = InferenceRequest(
+            key = key,
+            input = InferenceInput.Text("hi"),
+            output = OutputSpec.Custom { it },
+            privacy = persistOutput,
+            cache = CachePolicy.readWrite(),
+        )
+        assertEquals("ok", store.generate(customReq).output)
+        assertEquals("ok", store.generate(customReq).output)
         provider.assertInvocations(2)
     }
 

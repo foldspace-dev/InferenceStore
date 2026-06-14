@@ -230,7 +230,13 @@ internal class RoutedInferenceStore(
             // miss/skipped-write rather than propagated. Compute the fingerprint only
             // when this request could actually use the cache, and bound it by the
             // remaining budget so a slow custom fingerprinter can't blow the deadline.
-            val wantsCacheAccess = cache != null && (
+            //
+            // Only outputs with a stable identity are cacheable: a custom parser has no
+            // type discriminator (its fingerprint can't distinguish two Custom<T>s), so
+            // caching it could serve a wrongly-typed artifact (ClassCastException in the
+            // caller). Excluded for the same reason dedupe excludes Custom outputs.
+            val cacheableOutput = outputSignature(request.output) != null
+            val wantsCacheAccess = cache != null && cacheableOutput && (
                 request.cache.read == CacheAccess.Allow ||
                     (request.cache.write == CacheAccess.Allow && request.privacy.persistence.persistOutput)
                 )
