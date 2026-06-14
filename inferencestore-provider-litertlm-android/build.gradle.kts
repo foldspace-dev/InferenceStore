@@ -21,9 +21,11 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":inferencestore-core"))
+            implementation(libs.kotlinx.coroutines.core)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
