@@ -15,7 +15,22 @@ import kotlin.time.Duration
  *
  * [MonitorEvent]s are the **redacted projection** of the canonical stream events:
  * they never carry raw prompts or outputs. Implementations must not block; hand
- * off to a non-blocking sink if they do I/O.
+ * off to a non-blocking sink if they do I/O. A monitor that throws never breaks a
+ * request — the engine isolates monitor failures.
+ *
+ * Example — count fallbacks and log failures:
+ * ```kotlin
+ * val store = InferenceStore.build {
+ *     provider(local); provider(cloud)
+ *     monitor { event ->
+ *         when (event) {
+ *             is MonitorEvent.FallbackStarted -> metrics.increment("fallback", event.reason.name)
+ *             is MonitorEvent.RequestFailed -> logger.warn("request ${event.requestId} failed: ${event.error}")
+ *             else -> {}
+ *         }
+ *     }
+ * }
+ * ```
  */
 public fun interface InferenceMonitor {
     public fun onEvent(event: MonitorEvent)
