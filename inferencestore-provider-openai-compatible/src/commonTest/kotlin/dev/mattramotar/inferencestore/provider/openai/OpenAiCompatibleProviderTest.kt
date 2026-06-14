@@ -135,6 +135,39 @@ class OpenAiCompatibleProviderTest {
     }
 
     @Test
+    fun validatingClient_stillMapsStatusWithoutLeakingBody() = runTest {
+        // A caller with expectSuccess=true would normally throw a body-bearing
+        // exception; the adapter sets expectSuccess=false per request so the
+        // body-free status mapping still runs.
+        val client = HttpClient(MockEngine { respond("secret-body", HttpStatusCode.Unauthorized) }) {
+            expectSuccess = true
+        }
+        val failed = provider(client).stream(textRequest(), InferenceContext()).toList().last()
+        assertTrue(failed is ProviderEvent.Failed)
+        assertEquals(ErrorCategory.PermanentProviderError, failed.error.category)
+        assertTrue(failed.error.message?.contains("secret-body") != true)
+    }
+
+    @Test
+    fun contentFilter_mapsToPolicyViolation() = runTest {
+        val sse = """
+            data: {"choices":[{"delta":{"content":"part"},"finish_reason":"content_filter"}]}
+
+            data: [DONE]
+        """.trimIndent()
+        val failed = provider(sseClient(sse)).stream(textRequest(), InferenceContext()).toList().last()
+        assertTrue(failed is ProviderEvent.Failed)
+        assertEquals(ErrorCategory.PolicyViolation, failed.error.category)
+    }
+
+    @Test
+    fun emptyStream_failsTransient() = runTest {
+        val failed = provider(sseClient("data: [DONE]\n")).stream(textRequest(), InferenceContext()).toList().last()
+        assertTrue(failed is ProviderEvent.Failed)
+        assertEquals(ErrorCategory.TransientProviderError, failed.error.category)
+    }
+
+    @Test
     fun availability_reflectsOnlineFlag() = runTest {
         val client = HttpClient(MockEngine { respond("", HttpStatusCode.OK) })
         assertEquals(ProviderAvailability.Available, provider(client, online = { true }).availability(InferenceContext()))

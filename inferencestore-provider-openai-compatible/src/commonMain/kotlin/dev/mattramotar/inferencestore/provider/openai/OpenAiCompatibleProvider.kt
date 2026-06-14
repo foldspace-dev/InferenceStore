@@ -21,6 +21,7 @@ import dev.mattramotar.inferencestore.core.provider.Usage
 import dev.mattramotar.inferencestore.core.provider.UnavailableReason
 import dev.mattramotar.inferencestore.core.provider.requiredCapabilities
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.expectSuccess
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -45,12 +47,25 @@ import kotlin.time.Duration.Companion.seconds
  * from the SSE response; provider/HTTP failures are mapped to stable
  * [ErrorCategory] values and never carry the raw response body or API key.
  */
-public class OpenAiCompatibleProvider(
+public class OpenAiCompatibleProvider private constructor(
     private val config: OpenAiConfig,
     private val httpClient: HttpClient,
-    override val id: ProviderId = ProviderId(ID),
-    private val online: suspend () -> Boolean = { true },
+    override val id: ProviderId,
+    private val online: suspend () -> Boolean,
 ) : InferenceProvider {
+
+    public constructor(
+        config: OpenAiConfig,
+        httpClient: HttpClient,
+        id: ProviderId = ProviderId(ID),
+    ) : this(config, httpClient, id, { true })
+
+    /** Test seam: lets tests drive [availability] without a real connectivity probe. */
+    internal constructor(
+        config: OpenAiConfig,
+        httpClient: HttpClient,
+        online: suspend () -> Boolean,
+    ) : this(config, httpClient, ProviderId(ID), online)
 
     override val kind: ProviderKind = ProviderKind.Cloud
     override val boundary: ProviderPrivacyBoundary = ProviderPrivacyBoundary.thirdPartyCloud(config.vendor)
@@ -84,13 +99,16 @@ public class OpenAiCompatibleProvider(
         )
         emit(ProviderEvent.Started(metadata))
 
-        val body = json.encodeToString(ChatCompletionRequest.serializer(), requestBody(request))
-        val apiKey = config.apiKey()
-
         try {
+            // Inside the try so a throwing apiKey()/serialization maps to a failure.
+            val body = json.encodeToString(ChatCompletionRequest.serializer(), requestBody(request))
+            val apiKey = config.apiKey()
             val response = httpClient.post(config.chatCompletionsUrl) {
+                // Take our own status path regardless of the caller's client config; a
+                // validating client would otherwise throw a body-bearing exception.
+                expectSuccess = false
                 contentType(ContentType.Application.Json)
-                if (apiKey != null) header(HttpHeaders.Authorization, "Bearer $apiKey")
+                if (!apiKey.isNullOrBlank()) header(HttpHeaders.Authorization, "Bearer $apiKey")
                 config.organization?.let { header("OpenAI-Organization", it) }
                 setBody(body)
             }
@@ -100,6 +118,8 @@ public class OpenAiCompatibleProvider(
             }
             val accumulated = StringBuilder()
             var usage: Usage? = null
+            var finishReason: String? = null
+            var sawChunk = false
             // Parse the SSE body and emit tokens. MVP reads the body as text for
             // cross-platform reliability (Ktor 3 kotlinx-io channels differ on
             // Native); socket-level streaming via the Ktor SSE plugin is a follow-up.
@@ -108,7 +128,9 @@ public class OpenAiCompatibleProvider(
                 val data = line.removePrefix(DATA_PREFIX).trim()
                 if (data == DONE) break
                 val chunk = runCatching { json.decodeFromString(StreamChunk.serializer(), data) }.getOrNull() ?: continue
+                sawChunk = true
                 chunk.usage?.let { usage = it.toUsage() }
+                chunk.choices.firstOrNull()?.finishReason?.let { finishReason = it }
                 val delta = chunk.choices.firstOrNull()?.delta?.content
                 if (!delta.isNullOrEmpty()) {
                     accumulated.append(delta)
@@ -116,10 +138,20 @@ public class OpenAiCompatibleProvider(
                 }
             }
             val rawText = accumulated.toString()
-            when (val parsed = parseOutput(request.output, rawText)) {
-                is ParseResult.Ok -> emit(ProviderEvent.Completed(parsed.output, rawText = rawText, usage = usage, metadata = metadata))
-                is ParseResult.Error -> emit(ProviderEvent.Failed(parsed.error))
+            when {
+                // A content-filter stop is a policy refusal, not a success.
+                finishReason == "content_filter" ->
+                    emit(ProviderEvent.Failed(ProviderError(ErrorCategory.PolicyViolation, message = "content filtered")))
+                // No parseable chunks / empty completion: fail so routing can fall back.
+                !sawChunk || rawText.isEmpty() ->
+                    emit(ProviderEvent.Failed(ProviderError(ErrorCategory.TransientProviderError, message = "empty response", source = ErrorSource.ProviderSpecific)))
+                else -> when (val parsed = parseOutput(request.output, rawText)) {
+                    is ParseResult.Ok -> emit(ProviderEvent.Completed(parsed.output, rawText = rawText, usage = usage, metadata = metadata))
+                    is ParseResult.Error -> emit(ProviderEvent.Failed(parsed.error))
+                }
             }
+            // Note: finishReason == "length" (truncation) is treated as a successful
+            // partial result for MVP.
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
@@ -132,11 +164,8 @@ public class OpenAiCompatibleProvider(
             is InferenceInput.Text -> listOf(WireMessage("user", input.value))
             is InferenceInput.Messages -> input.messages.map { WireMessage(it.role.name.lowercase(), it.content) }
         }
-        val responseFormat = if (config.supportsStructuredOutput && request.output is OutputSpec.Json) {
-            ResponseFormat("json_object")
-        } else {
-            null
-        }
+        val structured = request.output is OutputSpec.Json || request.output is OutputSpec.Custom
+        val responseFormat = if (config.supportsStructuredOutput && structured) ResponseFormat("json_object") else null
         return ChatCompletionRequest(model = config.model, messages = messages, stream = true, responseFormat = responseFormat)
     }
 
@@ -150,12 +179,17 @@ public class OpenAiCompatibleProvider(
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (throwable: Throwable) {
-        ParseResult.Error(ProviderError(ErrorCategory.ParsingFailed, message = "failed to parse output", cause = throwable))
+        // The throwable can wrap the unparseable model output; keep only a static
+        // message and do not attach it as cause, to avoid retaining content.
+        ParseResult.Error(ProviderError(ErrorCategory.ParsingFailed, message = "failed to parse output"))
     }
 
     private suspend fun mapHttpError(response: HttpResponse): ProviderError {
         val code = response.status.value
+        // Retry-After in seconds, or the OpenAI retry-after-ms header; HTTP-date form
+        // is not parsed (left null).
         val retryAfter = response.headers[HttpHeaders.RetryAfter]?.toLongOrNull()?.seconds
+            ?: response.headers["retry-after-ms"]?.toLongOrNull()?.milliseconds
         val (category, source) = when {
             code == 401 || code == 403 -> ErrorCategory.PermanentProviderError to ErrorSource.RequestInvalid
             code == 408 -> ErrorCategory.Timeout to ErrorSource.AttemptTimeout
@@ -171,12 +205,18 @@ public class OpenAiCompatibleProvider(
 
     private fun mapException(throwable: Throwable): ProviderError {
         val name = throwable::class.simpleName.orEmpty()
+        val isTransport = listOf("IOException", "Connect", "Socket", "UnresolvedAddress", "Network", "ConnectionClosed")
+            .any { name.contains(it, ignoreCase = true) }
+        // This adapter does not own the request deadline, so a timeout here is an
+        // attempt-level timeout.
         return when {
             name.contains("Timeout", ignoreCase = true) ->
                 ProviderError(ErrorCategory.Timeout, source = ErrorSource.AttemptTimeout, cause = throwable)
-            else ->
-                // Cloud transport failures are treated as transient so routing can fall back.
+            // Only known transport/IO failures are transient (network can recover).
+            isTransport ->
                 ProviderError(ErrorCategory.TransientProviderError, source = ErrorSource.ProviderSpecific, cause = throwable)
+            // Anything else is unmapped → terminal, per "improve mapping before enabling fallback".
+            else -> ProviderError(ErrorCategory.Unknown, cause = throwable)
         }
     }
 

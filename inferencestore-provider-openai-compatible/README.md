@@ -46,6 +46,7 @@ landing in OSS-28).
 
 ## MVP limitations
 
-- The response body is read as text and parsed for SSE chunks. Socket-level live
-  streaming via the Ktor SSE plugin is a follow-up; the engine still surfaces
-  tokens as `InferenceEvent`s.
+- The response body is read as text and parsed for SSE chunks. The adapter emits
+  `ProviderEvent.Token` / `ProviderEvent.Completed`, which the engine maps to the
+  public `InferenceEvent` stream. Socket-level live streaming via the Ktor SSE
+  plugin is a follow-up.
