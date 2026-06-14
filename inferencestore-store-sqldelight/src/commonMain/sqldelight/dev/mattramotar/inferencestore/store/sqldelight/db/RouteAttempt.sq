@@ -1,0 +1,27 @@
+-- Persistent route attempts (storage-model.md). Content-free: ids/categories/timings only.
+CREATE TABLE route_attempt (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_id TEXT NOT NULL,
+    fingerprint TEXT,
+    provider_id TEXT NOT NULL,
+    model_id TEXT,
+    outcome TEXT NOT NULL,
+    error_category TEXT,
+    recorded_at_epoch_ms INTEGER NOT NULL
+);
+
+CREATE INDEX route_attempt_provider ON route_attempt(provider_id);
+
+insert:
+INSERT INTO route_attempt(request_id, fingerprint, provider_id, model_id, outcome, error_category, recorded_at_epoch_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+selectByProvider:
+SELECT * FROM route_attempt WHERE provider_id = ? ORDER BY recorded_at_epoch_ms DESC;
+
+countFailuresSince:
+SELECT COUNT(*) FROM route_attempt
+WHERE provider_id = ? AND outcome = 'Failed' AND recorded_at_epoch_ms >= ?;
+
+deleteAll:
+DELETE FROM route_attempt;

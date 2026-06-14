@@ -1,0 +1,2 @@
+-- Migration 1 -> 2: persist the validation result alongside the artifact.
+ALTER TABLE inference_artifact ADD COLUMN validation_json TEXT;
