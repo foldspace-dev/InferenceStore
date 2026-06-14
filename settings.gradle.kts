@@ -24,6 +24,7 @@ include(
     ":inferencestore-provider-litertlm-android",
     ":inferencestore-provider-firebase-android",
     ":inferencestore-store-sqldelight",
+    ":inferencestore-monitor-opentelemetry",
     ":samples:notes-summary",
     ":samples:cross-platform",
 )
