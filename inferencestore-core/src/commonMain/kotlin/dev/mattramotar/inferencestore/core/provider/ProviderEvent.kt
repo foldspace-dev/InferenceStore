@@ -60,14 +60,17 @@ public class ProviderError(
     public val message: String? = null,
     public val retryAfter: Duration? = null,
     public val cause: Throwable? = null,
+    public val source: ErrorSource? = null,
 ) {
     /**
      * Log-safe string form: both [cause] and [message] are omitted, since an
      * adapter may populate [message] from a raw provider body that could carry
-     * secrets. Both remain available via their properties for debug hooks.
+     * secrets. [category]/[source]/[retryAfter] are stable taxonomy values and are
+     * safe to include; [cause]/[message] remain available via their properties for
+     * debug hooks.
      */
     override fun toString(): String =
-        "ProviderError(category=$category, retryAfter=$retryAfter)"
+        "ProviderError(category=$category, source=$source, retryAfter=$retryAfter)"
 }
 
 /** Stable provider error taxonomy (canonical in `error-fallback-mapping.md`). */
@@ -84,4 +87,19 @@ public enum class ErrorCategory {
     ParsingFailed,
     Cancelled,
     Unknown,
+}
+
+/**
+ * Optional refinement of an [ErrorCategory] that the fallback mapping uses where
+ * the same category has different dispositions by source (`error-fallback-mapping.md`):
+ * an attempt timeout may fall back while a request-deadline timeout is terminal,
+ * and a provider-specific permanent error may fall back while an invalid request
+ * is terminal. Adapters should set it when known.
+ */
+@Serializable
+public enum class ErrorSource {
+    AttemptTimeout,
+    RequestDeadlineExceeded,
+    ProviderSpecific,
+    RequestInvalid,
 }
