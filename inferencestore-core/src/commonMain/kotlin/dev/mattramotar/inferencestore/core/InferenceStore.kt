@@ -12,6 +12,7 @@ import dev.mattramotar.inferencestore.core.event.RejectedProviderTrace
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.event.RouteTrace
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.policy.FallbackMapping
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.InferenceRoute
 import dev.mattramotar.inferencestore.core.policy.Policies
@@ -20,6 +21,7 @@ import dev.mattramotar.inferencestore.core.policy.PrivacyDecision
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
 import dev.mattramotar.inferencestore.core.policy.allowsProvider
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
 import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
@@ -106,7 +108,7 @@ public class InferenceException(public val error: InferenceError) :
 private sealed interface AttemptResult<out Output : Any> {
     class NoTerminal<Output : Any> : AttemptResult<Output>
     class Success<Output : Any>(val output: Output, val rawText: String?) : AttemptResult<Output>
-    class Failure(val category: ErrorCategory) : AttemptResult<Nothing>
+    class Failure(val category: ErrorCategory, val source: ErrorSource? = null) : AttemptResult<Nothing>
 }
 
 internal class RoutedInferenceStore(
@@ -228,7 +230,8 @@ internal class RoutedInferenceStore(
                                     modelId = event.metadata.modelId ?: modelId
                                     result = AttemptResult.Success(event.output, event.rawText)
                                 }
-                                is ProviderEvent.Failed -> result = AttemptResult.Failure(event.error.category)
+                                is ProviderEvent.Failed ->
+                                    result = AttemptResult.Failure(event.error.category, event.error.source)
                             }
                         }
                         .catch { throwable ->
@@ -271,7 +274,9 @@ internal class RoutedInferenceStore(
                     return@flow
                 }
 
-                val category = (result as? AttemptResult.Failure)?.category ?: ErrorCategory.TransientProviderError
+                val failure = result as? AttemptResult.Failure
+                val category = failure?.category ?: ErrorCategory.TransientProviderError
+                val source = failure?.source
                 attempts += ProviderAttemptTrace(provider.id.value, provider.kind, AttemptOutcome.Failed, modelId = modelId, errorCategory = category)
                 emit(
                     InferenceEvent.ProviderAttemptCompleted(
@@ -280,15 +285,18 @@ internal class RoutedInferenceStore(
                     ),
                 )
 
-                if (index < lastIndex && isFallbackEligible(category)) {
-                    val reason = toFallbackReason(category)
+                // Canonical decision (error-fallback-mapping.md); the request's
+                // FallbackPolicy may restrict it but cannot redefine the category.
+                val mayFallBack = FallbackMapping.isFallbackAllowed(category, source, request.fallback)
+                if (index < lastIndex && mayFallBack) {
+                    val reason = FallbackMapping.reasonFor(category)
                     fallbackReasons += reason
                     emit(InferenceEvent.FallbackStarted(requestId, reason, route[index + 1].id))
                 } else {
                     emit(
                         InferenceEvent.Failed(
                             requestId,
-                            InferenceError(category),
+                            InferenceError(category, source = source),
                             trace = RouteTrace(
                                 requestId = requestId.value,
                                 key = key,
@@ -331,33 +339,3 @@ private suspend fun probe(block: suspend () -> Boolean): Boolean =
     } catch (throwable: Throwable) {
         false
     }
-
-/** Whether a provider failure of [category] should trigger fallback (OSS-16 owns the canonical table). */
-private fun isFallbackEligible(category: ErrorCategory): Boolean = when (category) {
-    ErrorCategory.ProviderUnavailable,
-    ErrorCategory.CapabilityUnsupported,
-    ErrorCategory.Timeout,
-    ErrorCategory.RateLimited,
-    ErrorCategory.TransientProviderError,
-    ErrorCategory.ValidationFailed,
-    ErrorCategory.ParsingFailed,
-    -> true
-    ErrorCategory.PermanentProviderError,
-    ErrorCategory.PolicyViolation,
-    ErrorCategory.Cancelled,
-    ErrorCategory.Unknown,
-    -> false
-}
-
-private fun toFallbackReason(category: ErrorCategory): FallbackReason = when (category) {
-    ErrorCategory.ProviderUnavailable -> FallbackReason.ProviderUnavailable
-    ErrorCategory.CapabilityUnsupported -> FallbackReason.CapabilityUnsupported
-    ErrorCategory.Timeout -> FallbackReason.Timeout
-    ErrorCategory.RateLimited -> FallbackReason.RateLimited
-    ErrorCategory.TransientProviderError -> FallbackReason.TransientError
-    ErrorCategory.PermanentProviderError -> FallbackReason.PermanentError
-    ErrorCategory.ValidationFailed -> FallbackReason.ValidatorRejected
-    ErrorCategory.ParsingFailed -> FallbackReason.OutputParserFailed
-    ErrorCategory.PolicyViolation -> FallbackReason.PolicyViolation
-    ErrorCategory.Cancelled, ErrorCategory.Unknown -> FallbackReason.Unknown
-}

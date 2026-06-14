@@ -4,6 +4,7 @@ import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.provider.Capability
 import dev.mattramotar.inferencestore.core.provider.CapabilityReport
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
 import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
@@ -71,9 +72,9 @@ public class ProviderScript {
         steps += ScriptStep.Fail(error)
     }
 
-    /** Convenience: fail with a stable [category]. */
-    public fun fail(category: ErrorCategory, message: String? = null) {
-        steps += ScriptStep.Fail(ProviderError(category, message))
+    /** Convenience: fail with a stable [category] and optional [source]. */
+    public fun fail(category: ErrorCategory, message: String? = null, source: ErrorSource? = null) {
+        steps += ScriptStep.Fail(ProviderError(category, message, source = source))
     }
 
     /** Suspend for [duration] (uses the test virtual clock under `runTest`). */

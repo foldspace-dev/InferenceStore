@@ -1,6 +1,7 @@
 package dev.mattramotar.inferencestore.core.model
 
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
+import dev.mattramotar.inferencestore.core.policy.FallbackPolicy
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.PrivacyPolicy
 import dev.mattramotar.inferencestore.core.policy.RetryPolicy
@@ -94,6 +95,7 @@ public data class InferenceRequest<Output : Any>(
     public val cache: CachePolicy = CachePolicy.Default,
     public val timeout: TimeoutPolicy = TimeoutPolicy.Default,
     public val retry: RetryPolicy = RetryPolicy.Default,
+    public val fallback: FallbackPolicy = FallbackPolicy.Default,
     public val prompt: PromptSpec? = null,
     public val metadata: Map<String, String> = emptyMap(),
 ) {
@@ -104,12 +106,14 @@ public data class InferenceRequest<Output : Any>(
             input: String,
             privacy: PrivacyPolicy = PrivacyPolicy.Default,
             policy: InferencePolicy? = null,
+            fallback: FallbackPolicy = FallbackPolicy.Default,
         ): InferenceRequest<String> = InferenceRequest(
             key = key,
             input = InferenceInput.Text(input),
             output = OutputSpec.Text,
             privacy = privacy,
             policy = policy,
+            fallback = fallback,
         )
 
         /** Convenience for a text-in, typed-JSON-out request. */
@@ -119,12 +123,14 @@ public data class InferenceRequest<Output : Any>(
             serializer: KSerializer<Output>,
             privacy: PrivacyPolicy = PrivacyPolicy.Default,
             policy: InferencePolicy? = null,
+            fallback: FallbackPolicy = FallbackPolicy.Default,
         ): InferenceRequest<Output> = InferenceRequest(
             key = key,
             input = InferenceInput.Text(input),
             output = OutputSpec.Json(serializer),
             privacy = privacy,
             policy = policy,
+            fallback = fallback,
         )
     }
 }

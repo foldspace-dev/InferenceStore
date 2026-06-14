@@ -2,6 +2,7 @@ package dev.mattramotar.inferencestore.core.event
 
 import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.ProviderId
 import kotlinx.serialization.Serializable
 import kotlin.jvm.JvmInline
@@ -33,12 +34,20 @@ public data class InferenceResult<Output : Any>(
     public val trace: RouteTrace? = null,
 )
 
-/** Store-level error; the full taxonomy and routing mapping live in OSS-16. */
+/** Store-level error mapped to a stable [category] (`error-fallback-mapping.md`). */
 public data class InferenceError(
     public val category: ErrorCategory,
     public val message: String? = null,
     public val cause: Throwable? = null,
-)
+    public val source: ErrorSource? = null,
+) {
+    /**
+     * Log-safe string form: [message] and [cause] are omitted (they may carry raw
+     * provider content / secrets), mirroring `ProviderError`. Both remain available
+     * via their properties for debug hooks; only the stable taxonomy is printed.
+     */
+    override fun toString(): String = "InferenceError(category=$category, source=$source)"
+}
 
 /**
  * Canonical stream events (see `event-model.md`).
