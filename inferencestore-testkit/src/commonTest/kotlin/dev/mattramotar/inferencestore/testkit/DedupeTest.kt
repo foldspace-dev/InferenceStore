@@ -5,6 +5,7 @@ import dev.mattramotar.inferencestore.core.InferenceStore
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.model.InferenceKey
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.CachePolicy
 import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
@@ -202,6 +203,34 @@ class DedupeTest {
 
         provider.assertCancelled()
         a.await() // completes once its channel is closed
+    }
+
+    @Test
+    fun differingCacheAccess_doesNotShareExecution() = runTest {
+        // Two concurrent requests identical except for cache write access must NOT
+        // dedupe — otherwise the group creator's cache.write would silently decide
+        // the other caller's persistence (OSS-25 adversarial finding).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            delay(1.seconds)
+            complete("ok")
+        }
+        val store = store(provider, dispatcher)
+
+        val writeReq = InferenceRequest.text(key, "x")
+            .copy(cache = CachePolicy(allowDedupe = true, write = CacheAccess.Allow))
+        val noWriteReq = InferenceRequest.text(key, "x")
+            .copy(cache = CachePolicy(allowDedupe = true, write = CacheAccess.Deny))
+
+        val a = async { store.generate(writeReq) }
+        runCurrent()
+        val b = async { store.generate(noWriteReq) }
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("ok", a.await().output)
+        assertEquals("ok", b.await().output)
+        provider.assertInvocations(2) // separate executions, each honoring its own cache policy
     }
 
     @Test

@@ -28,6 +28,11 @@ public data class InferenceRoute(
  * gate (OSS-15) that a policy cannot bypass.
  */
 public fun interface InferencePolicy {
+    /**
+     * Orders [candidates] into a route. Must be side-effect-free: the fingerprinter
+     * may call it speculatively with an empty list purely to derive the policy's
+     * stable identity ([InferenceRoute.policyId]).
+     */
     public fun selectRoute(candidates: List<ProviderCandidate>): InferenceRoute
 }
 

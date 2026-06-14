@@ -34,12 +34,13 @@ class CacheTest {
         override suspend fun <Output : Any> read(
             fingerprint: InferenceFingerprint,
             output: OutputSpec<Output>,
+            policy: CachePolicy,
         ): InferenceArtifact<Output>? {
             reads++
             return store[fingerprint] as InferenceArtifact<Output>?
         }
 
-        override suspend fun <Output : Any> write(artifact: InferenceArtifact<Output>) {
+        override suspend fun <Output : Any> write(artifact: InferenceArtifact<Output>, policy: CachePolicy) {
             writes++
             store[artifact.fingerprint] = artifact
         }
@@ -58,12 +59,13 @@ class CacheTest {
         override suspend fun <Output : Any> read(
             fingerprint: InferenceFingerprint,
             output: OutputSpec<Output>,
+            policy: CachePolicy,
         ): InferenceArtifact<Output>? {
             if (onRead) error("read boom")
             return null
         }
 
-        override suspend fun <Output : Any> write(artifact: InferenceArtifact<Output>) {
+        override suspend fun <Output : Any> write(artifact: InferenceArtifact<Output>, policy: CachePolicy) {
             if (onWrite) error("write boom")
         }
 

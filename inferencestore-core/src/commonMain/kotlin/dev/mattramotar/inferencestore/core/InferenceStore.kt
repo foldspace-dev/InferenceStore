@@ -227,9 +227,13 @@ internal class RoutedInferenceStore(
             // All cache work is best-effort — a failing cache (or custom fingerprinter)
             // must never fail an otherwise-successful request, so it is tolerated to a
             // miss/skipped-write rather than propagated.
-            val fingerprint = if (cache != null) tolerateCacheFailure { fingerprinter.fingerprint(request) } else null
+            val fingerprint = if (cache != null) tolerateCacheFailure(null) { fingerprinter.fingerprint(request) } else null
             if (cache != null && fingerprint != null && request.cache.read == CacheAccess.Allow) {
-                val cached = tolerateCacheFailure { cache.read(fingerprint, request.output) }
+                // Bound the read by the remaining request budget so a slow (non-throwing)
+                // cache cannot hang the request past its deadline.
+                val cached = tolerateCacheFailure(remainingBudget()) {
+                    cache.read(fingerprint, request.output, request.cache)
+                }
                 // A redacted artifact (output omitted by privacy) cannot serve a hit.
                 if (cached?.output != null) {
                     emit(
@@ -470,7 +474,7 @@ internal class RoutedInferenceStore(
                             request.cache.write == CacheAccess.Allow &&
                             request.privacy.persistence.persistOutput
                         ) {
-                            tolerateCacheFailure {
+                            tolerateCacheFailure(remainingBudget()) {
                                 cache.write(
                                     InferenceArtifact(
                                         fingerprint = fingerprint,
@@ -481,6 +485,7 @@ internal class RoutedInferenceStore(
                                         trace = if (request.privacy.persistence.persistTrace) successTrace else null,
                                         validation = attemptValidation,
                                     ),
+                                    request.cache,
                                 )
                             }
                         }
@@ -565,9 +570,7 @@ internal class RoutedInferenceStore(
         val terminal: InferenceEvent<Output> = if (shouldDedupe(request)) {
             dedupe.generate(dedupeKey(request), route)
         } else {
-            @Suppress("UNCHECKED_CAST")
             route.first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
-                as InferenceEvent<Output>
         }
         return when (terminal) {
             is InferenceEvent.Done<*> -> {
@@ -650,8 +653,10 @@ internal class RoutedInferenceStore(
 
     // Dedupe compatibility key. Uses input hash codes (not raw content) so the
     // in-flight registry never retains prompts, and includes the policy, privacy,
-    // and output-schema identity so requests are only shared when truly compatible.
-    // Full fingerprinting (prompt/output/policy versions) arrives with OSS-20.
+    // output-schema, AND cache identity so requests are shared only when truly
+    // compatible — two in-flight requests differing in cache read/write access must
+    // NOT share one execution, or one caller's explicit cache.write would silently
+    // decide the other's persistence. Reusing the OSS-20 fingerprint here is OSS-21.
     private fun dedupeKey(request: InferenceRequest<*>): String {
         val inputSignature = when (val input = request.input) {
             is InferenceInput.Text -> input.value.hashCode()
@@ -666,6 +671,7 @@ internal class RoutedInferenceStore(
             request.privacy.cloud.toString(),
             request.privacy.persistence.toString(),
             policySignature,
+            request.cache.toString(),
         ).joinToString("|")
     }
 }
@@ -676,14 +682,15 @@ internal class RoutedInferenceStore(
  * whole request, so routing can fall back. Cancellation still propagates.
  */
 /**
- * Runs a best-effort cache operation. A failure (a misbehaving cache or custom
- * fingerprinter) yields null — treated as a miss or a skipped write — and never
- * fails the request; caller cancellation still propagates. `inline` so the block
- * may suspend within the engine flow.
+ * Runs a best-effort cache operation, bounded by [budget] when set so a slow
+ * (non-throwing) cache cannot hang the request past its deadline. A failure (a
+ * misbehaving cache or custom fingerprinter) or a timeout yields null — treated as
+ * a miss or a skipped write — and never fails the request; caller cancellation
+ * still propagates.
  */
-private inline fun <T> tolerateCacheFailure(block: () -> T): T? =
+private suspend fun <T> tolerateCacheFailure(budget: Duration?, block: suspend () -> T): T? =
     try {
-        block()
+        if (budget != null) withTimeoutOrNull(budget) { block() } else block()
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (throwable: Throwable) {
