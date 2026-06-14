@@ -41,6 +41,9 @@ internal sealed interface ScriptStep {
  */
 public class ProviderScript {
     public var availability: ProviderAvailability = ProviderAvailability.Available
+
+    /** If set, [FakeInferenceProvider.availability] throws this — to test defensive probing. */
+    public var probeError: Throwable? = null
     public var modelId: String? = null
     public val capabilities: MutableSet<Capability> =
         mutableSetOf(Capability.TextGeneration, Capability.Streaming)
@@ -108,7 +111,10 @@ public class FakeInferenceProvider(
     /** Whether a collection was cancelled mid-stream. */
     public val wasCancelled: Boolean get() = cancelledFlag.load()
 
-    override suspend fun availability(context: InferenceContext): ProviderAvailability = script.availability
+    override suspend fun availability(context: InferenceContext): ProviderAvailability {
+        script.probeError?.let { throw it }
+        return script.availability
+    }
 
     override suspend fun capabilities(
         request: InferenceRequest<*>,
