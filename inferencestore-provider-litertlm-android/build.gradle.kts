@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.maven.publish)
 }
 
 // LiteRT-LM is an Android/JVM runtime, so this adapter declares only those targets.

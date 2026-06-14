@@ -11,16 +11,26 @@ and runs today:
 
 ## 1. Add the dependency
 
-> Publishing to Maven Central lands with OSS-8 (release automation). Until then, build
-> from source or use the in-repo `:inferencestore-*` modules (as the sample does). The
-> coordinates below show the shape once published — group `dev.mattramotar.inferencestore`,
-> current version `0.1.0-dev`.
+> Pre-release: `0.1.0-SNAPSHOT` publishes to the Central Portal snapshot repository.
+> Add it to your repositories, or build from source / use the in-repo `:inferencestore-*`
+> modules (as the sample does). Released versions resolve from Maven Central with no
+> extra repository.
+
+```kotlin
+// settings.gradle.kts — only needed for -SNAPSHOT versions
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven("https://central.sonatype.com/repository/maven-snapshots/")
+    }
+}
+```
 
 `gradle/libs.versions.toml` (version catalog):
 
 ```toml
 [versions]
-inferencestore = "0.1.0-dev"
+inferencestore = "0.1.0-SNAPSHOT"
 
 [libraries]
 inferencestore-core = { module = "dev.mattramotar.inferencestore:inferencestore-core", version.ref = "inferencestore" }
