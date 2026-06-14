@@ -27,6 +27,7 @@ include(
     ":inferencestore-monitor-opentelemetry",
     ":samples:notes-summary",
     ":samples:cross-platform",
+    ":samples:validation-demo",
 )
 
 // The Android target is enabled only when a real SDK is configured: an
