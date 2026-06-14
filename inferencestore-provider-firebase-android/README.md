@@ -38,9 +38,16 @@ exemption.
 
 ## Capability limits
 
-`TextGeneration`, `Chat`, `Streaming`, `StructuredOutput` (Gemini guided/JSON output).
-**Not** `Offline` — the cloud path requires network, so the hybrid never advertises
-offline capability. This prototype emits text output only.
+`TextGeneration`, `Chat`, `Streaming`. **Not** `Offline` (the cloud path requires
+network) and **not** `StructuredOutput` — this prototype emits text only, so it must not
+advertise a capability `stream()` would reject (that would let the capability gate route
+a JSON request here just to fail). Gemini's guided/JSON output is a follow-up.
+
+> Routing vs privacy `localOnly`: this hybrid has `ProviderKind.Platform`, so the
+> *routing* preset `Policies.localOnly()` will still select it (Platform is a local-tier
+> kind) — but it is cloud-capable and gives no on-device guarantee. Only the *privacy*
+> `PrivacyPolicy.localOnly()` / `Default` actually blocks it, via the gate (its cloud-like
+> boundary). Use a dedicated on-device provider when you need a hard guarantee.
 
 ## Route trace records the source
 

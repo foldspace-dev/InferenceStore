@@ -55,9 +55,11 @@ public class FirebaseAiLogicProvider(
     override val boundary: ProviderPrivacyBoundary =
         ProviderPrivacyBoundary.platformHybrid("Firebase AI Logic / Google")
 
-    // No Offline: the hybrid may require network for the cloud path.
+    // No Offline (the cloud path needs network) and no StructuredOutput: this prototype
+    // emits text only, so it must not advertise a capability stream() would reject —
+    // otherwise the capability gate would route a JSON request here only for it to fail.
     private val capabilities: Set<Capability> =
-        setOf(Capability.TextGeneration, Capability.Chat, Capability.Streaming, Capability.StructuredOutput)
+        setOf(Capability.TextGeneration, Capability.Chat, Capability.Streaming)
 
     override suspend fun availability(context: InferenceContext): ProviderAvailability {
         val budget = listOfNotNull(context.timeout.availabilityTimeout, config.initializationTimeout).minOrNull()

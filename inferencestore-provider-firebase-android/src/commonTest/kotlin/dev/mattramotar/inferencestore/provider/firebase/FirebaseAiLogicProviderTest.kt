@@ -1,6 +1,7 @@
 package dev.mattramotar.inferencestore.provider.firebase
 
 import dev.mattramotar.inferencestore.core.InferenceStore
+import dev.mattramotar.inferencestore.core.event.FinalStatus
 import dev.mattramotar.inferencestore.core.event.InferenceEvent
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceKey
@@ -44,6 +45,8 @@ class FirebaseAiLogicProviderTest {
     ) : FirebaseAiRuntime {
         var cancelled: Boolean = false
             private set
+        var generated: Boolean = false
+            private set
 
         override suspend fun probe(config: FirebaseAiConfig): FirebaseAiStatus {
             if (probeDelay > Duration.ZERO) kotlinx.coroutines.delay(probeDelay)
@@ -51,6 +54,7 @@ class FirebaseAiLogicProviderTest {
         }
 
         override fun generate(config: FirebaseAiConfig, prompt: String): Flow<FirebaseAiChunk> = flow {
+            generated = true
             try {
                 if (block) awaitCancellation()
                 error?.let { throw it }
@@ -84,18 +88,21 @@ class FirebaseAiLogicProviderTest {
         val provider = FirebaseAiLogicProvider(config, FakeRuntime(chunks = chunks(FirebaseAiSource.Cloud, "ok")))
         val result = InferenceStore.single(provider)
             .generate(InferenceRequest.text(key, "hi", privacy = PrivacyPolicy.publicData()))
-        val completed = provider.stream(textRequest(), InferenceContext()).toList().last() as ProviderEvent.Completed<*>
-        assertEquals(FirebaseAiSource.Cloud.name, completed.metadata.extra["firebase.source"])
+        assertEquals("ok", result.output)
         assertTrue(result.trace?.attempts?.first()?.modelId?.contains("Cloud") == true)
     }
 
     @Test
     fun cloudDeniedPrivacy_refusesHybrid() = runTest {
-        // Default privacy denies cloud; the cloud-like hybrid is refused before any call.
-        val provider = FirebaseAiLogicProvider(config, FakeRuntime(chunks = chunks(FirebaseAiSource.OnDevice, "nope")))
+        // Default privacy denies cloud; the cloud-like hybrid is refused by the gate
+        // before any call — proven by the PrivacyDenied status and zero runtime use.
+        val runtime = FakeRuntime(chunks = chunks(FirebaseAiSource.OnDevice, "nope"))
+        val provider = FirebaseAiLogicProvider(config, runtime)
         val last = InferenceStore.single(provider).stream(InferenceRequest.text(key, "hi")).toList().last()
         assertTrue(last is InferenceEvent.Failed)
         assertEquals(ErrorCategory.PolicyViolation, last.error.category)
+        assertEquals(FinalStatus.PrivacyDenied, last.trace?.finalStatus)
+        assertTrue(!runtime.generated, "the gate must refuse the hybrid without invoking it")
     }
 
     @Test
@@ -108,6 +115,7 @@ class FirebaseAiLogicProviderTest {
         assertEquals("Hello", completed.output)
         assertEquals("gemini (OnDevice)", completed.metadata.modelId)
         assertEquals("firebase-ai-logic", completed.metadata.extra["runtime"])
+        assertEquals(FirebaseAiSource.OnDevice.name, completed.metadata.extra["firebase.source"])
     }
 
     @Test
