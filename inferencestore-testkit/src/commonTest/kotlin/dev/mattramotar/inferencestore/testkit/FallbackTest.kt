@@ -9,6 +9,7 @@ import dev.mattramotar.inferencestore.core.policy.FallbackPolicy
 import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ErrorSource
+import dev.mattramotar.inferencestore.core.provider.ProviderError
 import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -76,6 +77,20 @@ class FallbackTest {
     }
 
     @Test
+    fun timeoutAttempt_fallsBackToNext() = runTest {
+        // Attempt timeout (unlike a request-deadline timeout) may fall back.
+        val a = failing("a", ErrorCategory.Timeout, ErrorSource.AttemptTimeout)
+        val b = good("b")
+        val result = store(a, b).generate(req())
+        assertEquals("from-b", result.output)
+        assertRoute(result.trace) {
+            attempted("a")
+            fellBackTo("b", FallbackReason.Timeout)
+            completedWith("b")
+        }
+    }
+
+    @Test
     fun validationFailed_terminalByDefault_butFallsBackWithRepair() = runTest {
         val a = failing("a", ErrorCategory.ValidationFailed)
         val b = good("b")
@@ -89,6 +104,34 @@ class FallbackTest {
         val result = store(a2, b2).generate(req(FallbackPolicy(repairEnabled = true)))
         assertEquals("from-b", result.output)
         assertRoute(result.trace) { fellBackTo("b", FallbackReason.ValidatorRejected) }
+    }
+
+    @Test
+    fun parsingFailed_terminalByDefault_butFallsBackWithRepair() = runTest {
+        val a = failing("a", ErrorCategory.ParsingFailed)
+        val b = good("b")
+        val last = store(a, b).stream(req()).toList().last()
+        assertTrue(last is InferenceEvent.Failed)
+        b.assertInvocations(0)
+
+        val a2 = failing("a", ErrorCategory.ParsingFailed)
+        val b2 = good("b")
+        val result = store(a2, b2).generate(req(FallbackPolicy(repairEnabled = true)))
+        assertEquals("from-b", result.output)
+        assertRoute(result.trace) { fellBackTo("b", FallbackReason.OutputParserFailed) }
+    }
+
+    @Test
+    fun terminalError_preservesProviderMessageAndCause_forDebug() = runTest {
+        val boom = IllegalStateException("debug-detail")
+        val a = fakeProvider("a", ProviderKind.Local) {
+            fail(ProviderError(ErrorCategory.PermanentProviderError, message = "adapter-message", cause = boom))
+        }
+        val last = store(a).stream(req()).toList().last()
+        assertTrue(last is InferenceEvent.Failed)
+        // Redacted in toString(), but available on the properties for debug hooks.
+        assertEquals("adapter-message", last.error.message)
+        assertEquals(boom, last.error.cause)
     }
 
     @Test

@@ -108,7 +108,12 @@ public class InferenceException(public val error: InferenceError) :
 private sealed interface AttemptResult<out Output : Any> {
     class NoTerminal<Output : Any> : AttemptResult<Output>
     class Success<Output : Any>(val output: Output, val rawText: String?) : AttemptResult<Output>
-    class Failure(val category: ErrorCategory, val source: ErrorSource? = null) : AttemptResult<Nothing>
+    class Failure(
+        val category: ErrorCategory,
+        val source: ErrorSource? = null,
+        val message: String? = null,
+        val cause: Throwable? = null,
+    ) : AttemptResult<Nothing>
 }
 
 internal class RoutedInferenceStore(
@@ -231,14 +236,21 @@ internal class RoutedInferenceStore(
                                     result = AttemptResult.Success(event.output, event.rawText)
                                 }
                                 is ProviderEvent.Failed ->
-                                    result = AttemptResult.Failure(event.error.category, event.error.source)
+                                    result = AttemptResult.Failure(
+                                        event.error.category,
+                                        event.error.source,
+                                        event.error.message,
+                                        event.error.cause,
+                                    )
                             }
                         }
                         .catch { throwable ->
                             // Cancellation is terminal and must propagate untouched.
                             if (throwable is CancellationException) throw throwable
-                            // A provider that throws is mapped defensively to Unknown.
-                            result = AttemptResult.Failure(ErrorCategory.Unknown)
+                            // A provider that throws is mapped defensively to Unknown; the
+                            // raw throwable is retained as cause for debug hooks (redacted
+                            // out of InferenceError.toString()).
+                            result = AttemptResult.Failure(ErrorCategory.Unknown, cause = throwable)
                         },
                 )
 
@@ -296,7 +308,7 @@ internal class RoutedInferenceStore(
                     emit(
                         InferenceEvent.Failed(
                             requestId,
-                            InferenceError(category, source = source),
+                            InferenceError(category, message = failure?.message, cause = failure?.cause, source = source),
                             trace = RouteTrace(
                                 requestId = requestId.value,
                                 key = key,
