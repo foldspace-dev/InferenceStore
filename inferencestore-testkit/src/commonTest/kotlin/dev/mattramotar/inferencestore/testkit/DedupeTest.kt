@@ -234,6 +234,30 @@ class DedupeTest {
     }
 
     @Test
+    fun differingPolicy_doesNotShareExecution() = runTest {
+        // Two distinct per-request policies that both route to the local provider must
+        // NOT share one execution. Their stable policyIds differ; pre-fix the dedupe key
+        // used reflective class names, which collapse all lambda presets to one class
+        // (and are null on Native), wrongly merging incompatible requests (OSS-25 review).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val provider = fakeProvider("p", ProviderKind.Local) {
+            delay(1.seconds)
+            complete("ok")
+        }
+        val store = store(provider, dispatcher)
+
+        val a = async { store.generate(dedupeRequest().copy(policy = Policies.preferLocalThenCloud())) }
+        runCurrent()
+        val b = async { store.generate(dedupeRequest().copy(policy = Policies.validateLocalThenCloudRepair())) }
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("ok", a.await().output)
+        assertEquals("ok", b.await().output)
+        provider.assertInvocations(2) // distinct policy identities -> separate executions
+    }
+
+    @Test
     fun dedupeDisabled_eachCollectorCallsProvider() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val provider = fakeProvider("p", ProviderKind.Local) {

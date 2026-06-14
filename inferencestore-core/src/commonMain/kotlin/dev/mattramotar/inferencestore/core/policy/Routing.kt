@@ -29,12 +29,25 @@ public data class InferenceRoute(
  */
 public fun interface InferencePolicy {
     /**
-     * Orders [candidates] into a route. Must be side-effect-free: the fingerprinter
-     * may call it speculatively with an empty list purely to derive the policy's
-     * stable identity ([InferenceRoute.policyId]).
+     * Orders [candidates] into a route. Must be side-effect-free: [stableId] calls it
+     * speculatively with an empty list purely to derive the policy's stable identity
+     * ([InferenceRoute.policyId]).
      */
     public fun selectRoute(candidates: List<ProviderCandidate>): InferenceRoute
 }
+
+/**
+ * A policy's stable identity — its route's [InferenceRoute.policyId] — used for cache
+ * fingerprinting (OSS-20) and dedupe compatibility. Readable and consistent across
+ * platforms, unlike `::class` names, which are null on Kotlin/Native for the
+ * lambda-based presets and collapse distinct lambdas to one class. Falls back to a
+ * class name (or a non-null marker) if a custom policy throws on empty candidates.
+ */
+internal fun InferencePolicy.stableId(): String =
+    runCatching { selectRoute(emptyList()).policyId }
+        .getOrNull()
+        ?.takeIf { it.isNotBlank() }
+        ?: this::class.qualifiedName ?: this::class.simpleName ?: "policy"
 
 /**
  * The five built-in MVP policy presets (`routing-policy.md`).

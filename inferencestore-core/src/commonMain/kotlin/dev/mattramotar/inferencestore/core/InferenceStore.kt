@@ -32,6 +32,7 @@ import dev.mattramotar.inferencestore.core.policy.PrivacyDecision
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
 import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.allowsProvider
+import dev.mattramotar.inferencestore.core.policy.stableId
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ProviderMetadata
 import dev.mattramotar.inferencestore.core.provider.ErrorSource
@@ -662,7 +663,7 @@ internal class RoutedInferenceStore(
             is InferenceInput.Text -> input.value.hashCode()
             is InferenceInput.Messages -> input.messages.hashCode()
         }
-        val policySignature = request.policy?.let { it::class.qualifiedName ?: it::class.simpleName } ?: "default"
+        val policySignature = request.policy?.stableId() ?: "default"
         return listOf(
             request.key.asString(),
             inputSignature.toString(),
