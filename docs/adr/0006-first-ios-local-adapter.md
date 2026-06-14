@@ -17,7 +17,7 @@ Llamatik.
 
 | Candidate | Platform support | Maturity | Streaming | Structured output | Model management | KMP/Swift interop |
 | --- | --- | --- | --- | --- | --- | --- |
-| **Apple Foundation Models** | iOS/macOS 26+ on Apple-Intelligence-capable devices only | Vendor-supported, new API | Yes (token stream) | Yes (guided generation / `@Generable`) | None — OS-managed on-device model | Swift framework; bridge via a Swift shim → Kotlin/Native cinterop |
+| **Apple Foundation Models** | iOS/iPadOS/macOS/visionOS 26+ on Apple-Intelligence-capable devices only | Vendor-supported, new API | Yes (token stream) | Yes (guided generation / `@Generable`) | None — OS-managed on-device model | Swift framework; bridge via a Swift shim → Kotlin/Native cinterop |
 | **LiteRT-LM (Swift)** | iOS + Android (same engine as the Android adapter) | Early, Google AI Edge | Yes | Via prompt/JSON (no constrained decoding yet) | App downloads/manages `.task` models | C/Swift API; same `LiteRtLmRuntime` injection shape as Android |
 | **Firebase AI Logic** | iOS/Android, cloud + limited hybrid | Vendor-supported | Yes | Gemini structured output | Cloud (or on-device where available) | Swift/Kotlin SDKs; cloud-leaning — not a pure local adapter |
 | **Cactus** | iOS/Android, on-device (GGUF) | Community/early | Yes | Prompt-level | App manages GGUF models | C/Swift; needs a bridge |
@@ -28,8 +28,10 @@ Llamatik.
 **Adopt Apple Foundation Models as the first iOS local/platform adapter**, mirroring the
 Android choice (each platform's native, vendor-supported on-device stack):
 
-- It is the privacy-strongest on-device option (no network, no app-managed model, no
-  download), which is the headline use case.
+- Its on-device `SystemLanguageModel` is the privacy-strongest option (no network, no
+  app-managed model, no download), which is the headline use case. (The framework also
+  exposes a server-based `PrivateCloudComputeLanguageModel`; if an app opts into that
+  path it must be modeled as a separate cloud-like boundary, not as this local provider.)
 - It supports streaming and structured output (guided generation), matching the core
   capabilities (`Streaming`, `StructuredOutput`).
 - Zero model management removes the biggest adapter-authoring burden.
@@ -46,9 +48,10 @@ and the core API is unchanged.
 
 ## Risks and deferred candidates
 
-- **Device coverage**: Foundation Models requires recent Apple-Intelligence-capable
-  hardware/OS; `availability()` must report `Unavailable` and route to cloud on older
-  devices. The sample/tests must exercise the unavailable path.
+- **Device coverage**: Foundation Models requires iOS/iPadOS/macOS/visionOS 26+ on
+  Apple-Intelligence-capable hardware; `availability()` must report `Unavailable` and
+  route to cloud on older/ineligible devices. The sample/tests must exercise the
+  unavailable path.
 - **API churn**: the framework is new; pin to a maturity level of *experimental* until
   validated on a device.
 - **Interop cost**: bridging a Swift-only framework into Kotlin/Native needs a thin Swift
