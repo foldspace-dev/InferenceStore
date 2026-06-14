@@ -4,8 +4,10 @@ Foreground route planning is faster when provider availability/capability is alr
 known. A `ProviderInventory` caches that, refreshed in the **background** by a Meeseeks
 worker so requests don't pay for live probes (`meeseeks-integration.md`).
 
-- `ProviderInventoryRecord` — availability, unavailable reason, capabilities, and a
-  `checkedAtMillis` timestamp for one provider.
+- `ProviderInventoryRecord` — one provider's last probe result: `providerId`, `available`,
+  the `reason` it is unavailable (or `null`), its `capabilities`, the `modelId` if known
+  (`null` until stream time), the `checkedAtMillis` timestamp, and an optional
+  `expiresAtMillis` after which the record is stale.
 - `ProviderInventory` — `get` / `put` / `all` / `clear`; `MemoryProviderInventory` is the
   in-memory implementation.
 - `ProviderInventoryRefresher` — the Meeseeks-agnostic refresh logic: probe the requested

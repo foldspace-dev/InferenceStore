@@ -68,4 +68,19 @@ class ProviderInventoryRefreshTest {
         assertTrue(!record.available)
         assertEquals(UnavailableReason.Unknown, record.reason) // defensive: a throwing probe is "unavailable"
     }
+
+    @Test
+    fun refresh_throwingCapabilityProbe_recordsUnavailable() = runTest {
+        // Availability succeeds, but the capability probe throws: we can't vouch for the
+        // provider, so it must be recorded unavailable with no capabilities — not available.
+        val flaky = fakeProvider("flaky", ProviderKind.Local) {
+            capabilityProbeError = IllegalStateException("capability boom")
+        }
+        val inventory = MemoryProviderInventory()
+        ProviderInventoryRefresher(listOf(flaky), inventory).refresh(payload("flaky"), atEpochMillis = 0)
+        val record = inventory.get(ProviderId("flaky"))!!
+        assertTrue(!record.available)
+        assertEquals(UnavailableReason.Unknown, record.reason)
+        assertTrue(record.capabilities.isEmpty())
+    }
 }

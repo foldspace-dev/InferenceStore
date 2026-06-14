@@ -38,13 +38,21 @@ public class ProviderInventoryRefresher(
         val requested = payload.providerIds.mapTo(mutableSetOf()) { ProviderId(it) }
         val targets = providers.filter { it.id in requested }
         return targets.map { provider ->
-            val availability = probe(context) { provider.availability(it) }.orUnavailable
-            val available = availability == ProviderAvailability.Available
-            val capabilities = if (available) {
-                probe(context) { provider.capabilities(probeRequest, it).capabilities } ?: emptySet()
+            var availability = probe(context) { provider.availability(it) }.orUnavailable
+            val capabilities = if (availability == ProviderAvailability.Available) {
+                val probed = probe(context) { provider.capabilities(probeRequest, it).capabilities }
+                if (probed == null) {
+                    // A failed capability probe means we can't vouch for the provider, so it
+                    // is recorded as unavailable — consistent with the defensive contract.
+                    availability = ProviderAvailability.Unavailable(UnavailableReason.Unknown)
+                    emptySet()
+                } else {
+                    probed
+                }
             } else {
                 emptySet()
             }
+            val available = availability == ProviderAvailability.Available
             val record = ProviderInventoryRecord(
                 providerId = provider.id,
                 available = available,

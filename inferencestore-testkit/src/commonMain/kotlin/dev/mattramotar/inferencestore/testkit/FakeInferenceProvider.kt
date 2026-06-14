@@ -45,6 +45,9 @@ public class ProviderScript {
 
     /** If set, [FakeInferenceProvider.availability] throws this — to test defensive probing. */
     public var probeError: Throwable? = null
+
+    /** If set, [FakeInferenceProvider.capabilities] throws this — to test capability-probe failures. */
+    public var capabilityProbeError: Throwable? = null
     public var modelId: String? = null
     public val capabilities: MutableSet<Capability> =
         mutableSetOf(Capability.TextGeneration, Capability.Streaming)
@@ -120,10 +123,13 @@ public class FakeInferenceProvider(
     override suspend fun capabilities(
         request: InferenceRequest<*>,
         context: InferenceContext,
-    ): CapabilityReport = CapabilityReport(
-        supported = request.requiredCapabilities().all { it in script.capabilities },
-        capabilities = script.capabilities.toSet(),
-    )
+    ): CapabilityReport {
+        script.capabilityProbeError?.let { throw it }
+        return CapabilityReport(
+            supported = request.requiredCapabilities().all { it in script.capabilities },
+            capabilities = script.capabilities.toSet(),
+        )
+    }
 
     override fun <Output : Any> stream(
         request: ProviderRequest<Output>,
