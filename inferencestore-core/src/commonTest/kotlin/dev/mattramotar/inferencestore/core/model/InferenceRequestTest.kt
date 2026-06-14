@@ -70,7 +70,7 @@ class InferenceRequestTest {
     @Test
     fun defaults_areCanonical() {
         val req = InferenceRequest.text(key, "hi")
-        assertEquals(PrivacyClass.Personal, req.privacy.privacyClass) // strict default per privacy-model.md
+        assertEquals(PrivacyClass.Personal, req.privacy.classification) // strict default per privacy-model.md
         assertEquals(0, req.retry.maxRetriesPerAttempt)
         assertEquals(false, req.cache.allowDedupe)
         assertEquals(null, req.policy)

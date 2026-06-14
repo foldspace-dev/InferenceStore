@@ -90,27 +90,72 @@ public sealed interface Capability {
     public data object Offline : Capability
 }
 
+/** Stable identifier for a provider privacy boundary (used by `CloudPermission.ApprovedBoundaries`). */
+@JvmInline
+public value class ProviderPrivacyBoundaryId(public val value: String)
+
+/** Where a provider executes (`privacy-model.md`). Drives the cloud privacy gate via [ProviderPrivacyBoundary.isCloudLike]. */
+public enum class ProviderExecutionBoundary {
+    LocalProcess,
+    PlatformOnDevice,
+    PlatformHybrid,
+    AppBackend,
+    ThirdPartyCloud,
+}
+
 /**
  * Declares a provider's data boundary. This is metadata to inform routing and
- * UX — not a legal guarantee (see `security-privacy.md`).
+ * the privacy gate — not a legal guarantee (see `security-privacy.md`).
  */
 public data class ProviderPrivacyBoundary(
-    public val isLocal: Boolean,
-    public val isCloud: Boolean,
+    public val id: ProviderPrivacyBoundaryId,
+    public val execution: ProviderExecutionBoundary,
     public val vendor: String? = null,
     public val dataRetention: String? = null,
     public val trainingUse: String? = null,
     public val region: String? = null,
+    public val notes: String? = null,
 ) {
+    /**
+     * Whether this boundary is cloud-capable: `PlatformHybrid`, `AppBackend`, or
+     * `ThirdPartyCloud` must pass the privacy gate before use (`privacy-model.md`).
+     */
+    public val isCloudLike: Boolean
+        get() = execution == ProviderExecutionBoundary.PlatformHybrid ||
+            execution == ProviderExecutionBoundary.AppBackend ||
+            execution == ProviderExecutionBoundary.ThirdPartyCloud
+
     public companion object {
         public fun localDevice(): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(isLocal = true, isCloud = false)
+            ProviderPrivacyBoundary(ProviderPrivacyBoundaryId("local-process"), ProviderExecutionBoundary.LocalProcess)
 
         public fun platform(vendor: String): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(isLocal = true, isCloud = false, vendor = vendor)
+            ProviderPrivacyBoundary(
+                ProviderPrivacyBoundaryId("platform-on-device:$vendor"),
+                ProviderExecutionBoundary.PlatformOnDevice,
+                vendor = vendor,
+            )
+
+        public fun platformHybrid(vendor: String): ProviderPrivacyBoundary =
+            ProviderPrivacyBoundary(
+                ProviderPrivacyBoundaryId("platform-hybrid:$vendor"),
+                ProviderExecutionBoundary.PlatformHybrid,
+                vendor = vendor,
+            )
+
+        public fun appBackend(vendor: String? = null): ProviderPrivacyBoundary =
+            ProviderPrivacyBoundary(
+                ProviderPrivacyBoundaryId("app-backend${vendor?.let { ":$it" } ?: ""}"),
+                ProviderExecutionBoundary.AppBackend,
+                vendor = vendor,
+            )
 
         public fun thirdPartyCloud(vendor: String): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(isLocal = false, isCloud = true, vendor = vendor)
+            ProviderPrivacyBoundary(
+                ProviderPrivacyBoundaryId("third-party-cloud:$vendor"),
+                ProviderExecutionBoundary.ThirdPartyCloud,
+                vendor = vendor,
+            )
     }
 }
 

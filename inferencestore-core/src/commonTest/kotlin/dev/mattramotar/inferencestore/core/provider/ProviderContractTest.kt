@@ -74,7 +74,8 @@ class ProviderContractTest {
     @Test
     fun availabilityAndBoundary() = runTest {
         assertEquals(ProviderAvailability.Available, echo.availability(InferenceContext()))
-        assertTrue(echo.boundary.isLocal)
+        assertEquals(ProviderExecutionBoundary.LocalProcess, echo.boundary.execution)
+        assertTrue(!echo.boundary.isCloudLike)
         assertEquals(ProviderKind.Test, echo.kind)
     }
 
