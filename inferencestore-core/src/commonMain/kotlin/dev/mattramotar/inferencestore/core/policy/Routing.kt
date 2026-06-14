@@ -37,6 +37,22 @@ public fun interface InferencePolicy {
 }
 
 /**
+ * A policy that routes only among providers NOT in [providerIds] — e.g. a cooled-down
+ * snapshot from a `RouteJournal` — delegating ordering to the receiver. The journal
+ * read is suspending, so take the snapshot before the request and pass it here:
+ *
+ * ```kotlin
+ * val cooled = journal.cooledDownProviders()
+ * store.generate(request.copy(policy = Policies.preferLocalThenCloud().excluding(cooled)))
+ * ```
+ */
+public fun InferencePolicy.excluding(
+    providerIds: Set<dev.mattramotar.inferencestore.core.provider.ProviderId>,
+): InferencePolicy = InferencePolicy { candidates ->
+    selectRoute(candidates.filterNot { it.provider.id in providerIds })
+}
+
+/**
  * A policy's stable identity — its route's [InferenceRoute.policyId] — used for cache
  * fingerprinting (OSS-20) and dedupe compatibility. Readable and consistent across
  * platforms, unlike `::class` names, which are null on Kotlin/Native for the
