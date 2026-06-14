@@ -13,6 +13,7 @@ import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.event.RouteTrace
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.policy.FallbackMapping
+import dev.mattramotar.inferencestore.core.policy.delayFor
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
 import dev.mattramotar.inferencestore.core.policy.InferenceRoute
 import dev.mattramotar.inferencestore.core.policy.Policies
@@ -29,16 +30,24 @@ import dev.mattramotar.inferencestore.core.provider.ProviderId
 import dev.mattramotar.inferencestore.core.provider.ProviderEvent
 import dev.mattramotar.inferencestore.core.provider.toProviderRequest
 import dev.mattramotar.inferencestore.core.validation.ValidationResult
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.time.Duration
+import kotlin.time.TimeSource
 
 /**
  * The streaming-first entry point.
@@ -100,6 +109,12 @@ public class InferenceStoreBuilder {
  */
 public class InferenceExecutionConfig(
     public val providerContext: CoroutineContext = EmptyCoroutineContext,
+    /**
+     * Clock for request-deadline budget accounting. Defaults to the monotonic
+     * system clock; tests pass `TestScope.testTimeSource` so deadlines respect the
+     * virtual clock.
+     */
+    public val timeSource: TimeSource = TimeSource.Monotonic,
 )
 
 /** Thrown by [InferenceStore.generate] when a request terminates in failure. */
@@ -114,6 +129,7 @@ private sealed interface AttemptResult<out Output : Any> {
         val source: ErrorSource? = null,
         val message: String? = null,
         val cause: Throwable? = null,
+        val retryAfter: Duration? = null,
     ) : AttemptResult<Nothing>
 }
 
@@ -140,6 +156,10 @@ internal class RoutedInferenceStore(
             val providerRequest = request.toProviderRequest()
             emit(InferenceEvent.Started(requestId, request.key))
 
+            // Start the request-deadline clock here so it covers the FULL request
+            // (probes + attempts + retries + fallback), per timeout-retry-policy.md.
+            val deadlineMark = config.timeSource.markNow()
+
             // Privacy gate (privacy-model.md): evaluated BEFORE any provider work.
             // A denial is terminal for that provider and routing policy cannot
             // override it, so privacy-denied providers are never probed nor routed.
@@ -153,8 +173,13 @@ internal class RoutedInferenceStore(
                     // A provider that throws while being probed is treated as unavailable
                     // so the policy can route around it instead of crashing the request.
                     PrivacyDecision.Allow -> {
-                        val available = probe { provider.availability(context) == ProviderAvailability.Available }
-                        val supported = available && probe { provider.capabilities(request, context).supported }
+                        val availabilityTimeout = request.timeout.availabilityTimeout
+                        val available = probe(availabilityTimeout) {
+                            provider.availability(context) == ProviderAvailability.Available
+                        }
+                        val supported = available && probe(availabilityTimeout) {
+                            provider.capabilities(request, context).supported
+                        }
                         ProviderCandidate(provider, available, supported)
                     }
                 }
@@ -218,133 +243,209 @@ internal class RoutedInferenceStore(
                 return@flow
             }
 
+            // Request-deadline budget accounting (timeout-retry-policy.md), measured
+            // on config.timeSource (deadlineMark, started above) so tests can drive it
+            // with the virtual clock.
+            val requestTimeout = request.timeout.requestTimeout
+            val attemptTimeout = request.timeout.attemptTimeout
+            fun remainingBudget(): Duration? = requestTimeout?.let { it - deadlineMark.elapsedNow() }
+            fun deadlineExceeded(): Boolean = remainingBudget()?.let { it <= Duration.ZERO } == true
+            fun failedTrace() = RouteTrace(
+                requestId = requestId.value,
+                key = key,
+                finalStatus = FinalStatus.Failed,
+                policyId = policyId,
+                attempts = attempts.toList(),
+                rejectedProviders = rejected,
+                fallbackReasons = fallbackReasons.toList(),
+            )
+            val deadlineError = InferenceError(
+                ErrorCategory.Timeout,
+                message = "request deadline exceeded",
+                source = ErrorSource.RequestDeadlineExceeded,
+            )
+
             val lastIndex = route.lastIndex
+            var attemptNumber = 0
             for ((index, provider) in route.withIndex()) {
-                val attemptNumber = index + 1
-                emit(InferenceEvent.ProviderAttemptStarted(requestId, ProviderAttemptSummary(provider.id, attemptNumber)))
+                var retriesUsed = 0
+                while (true) {
+                    if (deadlineExceeded()) {
+                        emit(InferenceEvent.Failed(requestId, deadlineError, trace = failedTrace()))
+                        return@flow
+                    }
+                    attemptNumber++
+                    emit(InferenceEvent.ProviderAttemptStarted(requestId, ProviderAttemptSummary(provider.id, attemptNumber)))
 
-                var modelId: String? = null
-                var result: AttemptResult<Output> = AttemptResult.NoTerminal()
-                emitAll(
-                    provider.stream(providerRequest, context)
-                        .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
-                            when (event) {
-                                is ProviderEvent.Started -> modelId = event.metadata.modelId
-                                is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
-                                is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
-                                is ProviderEvent.Completed -> {
-                                    modelId = event.metadata.modelId ?: modelId
-                                    result = AttemptResult.Success(event.output, event.rawText)
+                    // Bound the attempt by the smaller of the attempt timeout and the
+                    // remaining request budget; remember which one is binding so a
+                    // timeout maps to the right source.
+                    val budgetRemaining = remainingBudget()
+                    val attemptBudget = minDuration(attemptTimeout, budgetRemaining)
+                    val deadlineBinding = budgetRemaining != null &&
+                        (attemptTimeout == null || budgetRemaining <= attemptTimeout)
+
+                    var modelId: String? = null
+                    var result: AttemptResult<Output> = AttemptResult.NoTerminal()
+                    emitAll(
+                        provider.stream(providerRequest, context)
+                            .let { if (attemptBudget != null) it.attemptTimeout(attemptBudget) else it }
+                            .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
+                                when (event) {
+                                    is ProviderEvent.Started -> modelId = event.metadata.modelId
+                                    is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
+                                    is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
+                                    is ProviderEvent.Completed -> {
+                                        modelId = event.metadata.modelId ?: modelId
+                                        result = AttemptResult.Success(event.output, event.rawText)
+                                    }
+                                    is ProviderEvent.Failed ->
+                                        result = AttemptResult.Failure(
+                                            event.error.category,
+                                            event.error.source,
+                                            event.error.message,
+                                            event.error.cause,
+                                            event.error.retryAfter,
+                                        )
                                 }
-                                is ProviderEvent.Failed ->
-                                    result = AttemptResult.Failure(
-                                        event.error.category,
-                                        event.error.source,
-                                        event.error.message,
-                                        event.error.cause,
-                                    )
                             }
+                            .catch { throwable ->
+                                when {
+                                    // Attempt/deadline timeout — map to the binding source.
+                                    throwable is TimeoutCancellationException ->
+                                        result = AttemptResult.Failure(
+                                            ErrorCategory.Timeout,
+                                            if (deadlineBinding) ErrorSource.RequestDeadlineExceeded else ErrorSource.AttemptTimeout,
+                                        )
+                                    // Caller cancellation is terminal and propagates untouched.
+                                    throwable is CancellationException -> throw throwable
+                                    // A provider that throws is mapped defensively to Unknown.
+                                    else -> result = AttemptResult.Failure(ErrorCategory.Unknown, cause = throwable)
+                                }
+                            },
+                    )
+
+                    // Final-output validation (OSS-17): a provider output that fails the
+                    // request validator becomes a validation failure for this attempt, so
+                    // the canonical fallback path decides repair (FallbackPolicy.repairEnabled).
+                    val produced = result
+                    val validator = request.validator
+                    if (produced is AttemptResult.Success && validator != null) {
+                        var validatorError: Throwable? = null
+                        val verdict = try {
+                            validator.validate(produced.output, produced.rawText)
+                        } catch (cancellation: CancellationException) {
+                            throw cancellation
+                        } catch (throwable: Throwable) {
+                            // A throwing validator fails the attempt defensively, like a
+                            // throwing provider — it must not escape and crash the request.
+                            validatorError = throwable
+                            ValidationResult.Fail("validator threw an exception", ErrorCategory.Unknown)
                         }
-                        .catch { throwable ->
-                            // Cancellation is terminal and must propagate untouched.
-                            if (throwable is CancellationException) throw throwable
-                            // A provider that throws is mapped defensively to Unknown; the
-                            // raw throwable is retained as cause for debug hooks (redacted
-                            // out of InferenceError.toString()).
-                            result = AttemptResult.Failure(ErrorCategory.Unknown, cause = throwable)
-                        },
-                )
-
-                // Final-output validation (OSS-17): a provider output that fails the
-                // request validator becomes a validation failure for this attempt, so
-                // the canonical fallback path decides repair (FallbackPolicy.repairEnabled).
-                val produced = result
-                val validator = request.validator
-                if (produced is AttemptResult.Success && validator != null) {
-                    var validatorError: Throwable? = null
-                    val verdict = try {
-                        validator.validate(produced.output, produced.rawText)
-                    } catch (cancellation: CancellationException) {
-                        throw cancellation
-                    } catch (throwable: Throwable) {
-                        // A validator that throws fails the attempt defensively, like a
-                        // throwing provider — it must not escape and crash the request.
-                        validatorError = throwable
-                        ValidationResult.Fail("validator threw an exception", ErrorCategory.Unknown)
+                        emit(InferenceEvent.ValidationCompleted(requestId, verdict))
+                        if (verdict is ValidationResult.Fail) {
+                            result = AttemptResult.Failure(verdict.category, message = verdict.reason, cause = validatorError)
+                        }
                     }
-                    emit(InferenceEvent.ValidationCompleted(requestId, verdict))
-                    if (verdict is ValidationResult.Fail) {
-                        result = AttemptResult.Failure(verdict.category, message = verdict.reason, cause = validatorError)
-                    }
-                }
 
-                val success = result as? AttemptResult.Success
-                if (success != null) {
-                    attempts += ProviderAttemptTrace(provider.id.value, provider.kind, AttemptOutcome.Succeeded, modelId = modelId)
+                    val success = result as? AttemptResult.Success
+                    if (success != null) {
+                        attempts += ProviderAttemptTrace(provider.id.value, provider.kind, AttemptOutcome.Succeeded, modelId = modelId)
+                        emit(
+                            InferenceEvent.ProviderAttemptCompleted(
+                                requestId,
+                                ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Succeeded),
+                            ),
+                        )
+                        emit(
+                            InferenceEvent.Done(
+                                requestId,
+                                InferenceResult(
+                                    request.key,
+                                    success.output,
+                                    success.rawText,
+                                    trace = RouteTrace(
+                                        requestId = requestId.value,
+                                        key = key,
+                                        finalStatus = FinalStatus.Succeeded,
+                                        policyId = policyId,
+                                        attempts = attempts.toList(),
+                                        rejectedProviders = rejected,
+                                        fallbackReasons = fallbackReasons.toList(),
+                                        finalProvider = provider.id.value,
+                                    ),
+                                ),
+                            ),
+                        )
+                        return@flow
+                    }
+
+                    val failure = result as? AttemptResult.Failure
+                    val category = failure?.category ?: ErrorCategory.TransientProviderError
+                    val source = failure?.source
+                    attempts += ProviderAttemptTrace(provider.id.value, provider.kind, AttemptOutcome.Failed, modelId = modelId, errorCategory = category)
                     emit(
                         InferenceEvent.ProviderAttemptCompleted(
                             requestId,
-                            ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Succeeded),
+                            ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Failed, category),
                         ),
                     )
-                    emit(
-                        InferenceEvent.Done(
-                            requestId,
-                            InferenceResult(
-                                request.key,
-                                success.output,
-                                success.rawText,
-                                trace = RouteTrace(
-                                    requestId = requestId.value,
-                                    key = key,
-                                    finalStatus = FinalStatus.Succeeded,
-                                    policyId = policyId,
-                                    attempts = attempts.toList(),
-                                    rejectedProviders = rejected,
-                                    fallbackReasons = fallbackReasons.toList(),
-                                    finalProvider = provider.id.value,
+
+                    // A request-deadline timeout is always terminal — no retry, no fallback.
+                    if (source == ErrorSource.RequestDeadlineExceeded) {
+                        emit(InferenceEvent.Failed(requestId, deadlineError, trace = failedTrace()))
+                        return@flow
+                    }
+
+                    // Opt-in same-provider retry (disabled by default). The Cancelled
+                    // exclusion only guards a provider that *reports* Cancelled as a
+                    // failure event; real caller cancellation is rethrown in .catch above.
+                    val retry = request.retry
+                    val canRetry = retriesUsed < retry.maxRetriesPerAttempt &&
+                        category in retry.retryableCategories &&
+                        category != ErrorCategory.Cancelled
+                    if (canRetry) {
+                        val backoff = retry.backoff.delayFor(retriesUsed)
+                        val delay = if (retry.respectRetryAfter && failure?.retryAfter != null) {
+                            maxOf(backoff, failure.retryAfter)
+                        } else {
+                            backoff
+                        }
+                        val budget = remainingBudget()
+                        if (budget == null || delay < budget) {
+                            retriesUsed++
+                            emit(InferenceEvent.RetryScheduled(requestId, provider.id, attemptNumber + 1, delay))
+                            if (delay > Duration.ZERO) delay(delay)
+                            continue // retry the same provider
+                        }
+                        // No budget for the retry delay — fall through to fallback/terminal.
+                    }
+
+                    // Fallback per the canonical mapping (OSS-16), subject to budget.
+                    val mayFallBack = index < lastIndex &&
+                        FallbackMapping.isFallbackAllowed(category, source, request.fallback)
+                    when {
+                        mayFallBack && deadlineExceeded() -> {
+                            emit(InferenceEvent.Failed(requestId, deadlineError, trace = failedTrace()))
+                            return@flow
+                        }
+                        mayFallBack -> {
+                            val reason = FallbackMapping.reasonFor(category)
+                            fallbackReasons += reason
+                            emit(InferenceEvent.FallbackStarted(requestId, reason, route[index + 1].id))
+                            break // advance to the next provider
+                        }
+                        else -> {
+                            emit(
+                                InferenceEvent.Failed(
+                                    requestId,
+                                    InferenceError(category, message = failure?.message, cause = failure?.cause, source = source),
+                                    trace = failedTrace(),
                                 ),
-                            ),
-                        ),
-                    )
-                    return@flow
-                }
-
-                val failure = result as? AttemptResult.Failure
-                val category = failure?.category ?: ErrorCategory.TransientProviderError
-                val source = failure?.source
-                attempts += ProviderAttemptTrace(provider.id.value, provider.kind, AttemptOutcome.Failed, modelId = modelId, errorCategory = category)
-                emit(
-                    InferenceEvent.ProviderAttemptCompleted(
-                        requestId,
-                        ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Failed, category),
-                    ),
-                )
-
-                // Canonical decision (error-fallback-mapping.md); the request's
-                // FallbackPolicy may restrict it but cannot redefine the category.
-                val mayFallBack = FallbackMapping.isFallbackAllowed(category, source, request.fallback)
-                if (index < lastIndex && mayFallBack) {
-                    val reason = FallbackMapping.reasonFor(category)
-                    fallbackReasons += reason
-                    emit(InferenceEvent.FallbackStarted(requestId, reason, route[index + 1].id))
-                } else {
-                    emit(
-                        InferenceEvent.Failed(
-                            requestId,
-                            InferenceError(category, message = failure?.message, cause = failure?.cause, source = source),
-                            trace = RouteTrace(
-                                requestId = requestId.value,
-                                key = key,
-                                finalStatus = FinalStatus.Failed,
-                                policyId = policyId,
-                                attempts = attempts.toList(),
-                                rejectedProviders = rejected,
-                                fallbackReasons = fallbackReasons.toList(),
-                            ),
-                        ),
-                    )
-                    return@flow
+                            )
+                            return@flow
+                        }
+                    }
                 }
             }
         }.flowOn(config.providerContext)
@@ -367,11 +468,30 @@ internal class RoutedInferenceStore(
  * is treated as "no" (provider unavailable/incapable) rather than failing the
  * whole request, so routing can fall back. Cancellation still propagates.
  */
-private suspend fun probe(block: suspend () -> Boolean): Boolean =
+private suspend fun probe(timeout: Duration?, block: suspend () -> Boolean): Boolean =
     try {
-        block()
+        if (timeout != null) withTimeoutOrNull(timeout) { block() } == true else block()
     } catch (cancellation: CancellationException) {
         throw cancellation
     } catch (throwable: Throwable) {
         false
     }
+
+/**
+ * Bounds total time for a single provider attempt while keeping live emission.
+ * A `channelFlow` is used so `send` inside `withTimeout` does not trip the flow
+ * "emission from another coroutine" invariant; on timeout this fails with a
+ * [TimeoutCancellationException] that the engine maps to a `Timeout` failure.
+ */
+private fun <T> Flow<T>.attemptTimeout(budget: Duration): Flow<T> = channelFlow {
+    withTimeout(budget) {
+        collect { send(it) }
+    }
+}
+
+/** The smaller of two optional durations (null = unbounded). */
+private fun minDuration(a: Duration?, b: Duration?): Duration? = when {
+    a == null -> b
+    b == null -> a
+    else -> minOf(a, b)
+}
