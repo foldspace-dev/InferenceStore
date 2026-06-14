@@ -33,9 +33,22 @@ public class EventAssertions(private val events: List<InferenceEvent<*>>) {
         }
     }
 
+    public fun partial() {
+        val e = take("Partial")
+        if (e !is InferenceEvent.Partial<*>) fail("expected Partial but was $e")
+    }
+
     public fun providerAttemptCompleted() {
         val e = take("ProviderAttemptCompleted")
         if (e !is InferenceEvent.ProviderAttemptCompleted) fail("expected ProviderAttemptCompleted but was $e")
+    }
+
+    /** Consumes a FallbackStarted; if [next] is given, asserts the next provider id. */
+    public fun fallbackStarted(next: String? = null) {
+        val e = take("FallbackStarted")
+        if (e !is InferenceEvent.FallbackStarted || (next != null && e.next?.value != next)) {
+            fail("expected FallbackStarted${next?.let { "(→$it)" } ?: ""} but was $e")
+        }
     }
 
     public fun done() {

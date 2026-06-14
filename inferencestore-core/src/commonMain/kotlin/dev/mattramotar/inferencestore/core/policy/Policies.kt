@@ -79,9 +79,3 @@ public data class CachePolicy(
         public val Default: CachePolicy = CachePolicy()
     }
 }
-
-/**
- * Routing policy marker. OSS-13 implements the five built-in presets and the
- * suspend policy contract from RFC-0003.
- */
-public interface InferencePolicy
