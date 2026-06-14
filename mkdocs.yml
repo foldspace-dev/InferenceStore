@@ -125,6 +125,14 @@ nav:
       - Model warmup: concepts/model-warmup.md
       - Telemetry upload: concepts/telemetry-upload.md
   - Guides:
+      - Recipes:
+          - guides/recipes/index.md
+          - Add cloud fallback: guides/recipes/cloud-fallback.md
+          - Enforce local-only privacy: guides/recipes/local-only-privacy.md
+          - Validate & repair output: guides/recipes/validate-and-repair.md
+          - Cache results: guides/recipes/cache-results.md
+          - Test routing deterministically: guides/recipes/test-routing.md
+          - Export traces to OpenTelemetry: guides/recipes/opentelemetry.md
       - Writing a provider adapter: guides/writing-a-provider-adapter.md
       - Security & privacy: guides/security-and-privacy.md
   - Reference:
