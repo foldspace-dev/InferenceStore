@@ -192,6 +192,26 @@ class PrivacyTest {
     }
 
     @Test
+    fun policy_onlySeesRoutableCandidates() = runTest {
+        val l = local()
+        val c = cloud() // cloud boundary -> privacy-denied under Personal default
+        var seen: List<String> = emptyList()
+        val capturing = InferencePolicy { candidates ->
+            seen = candidates.map { it.provider.id.value }
+            InferenceRoute("capture", candidates.map { it.provider })
+        }
+        val store = InferenceStore.build {
+            provider(l)
+            provider(c)
+            policy = capturing
+        }
+
+        store.generate(req(PrivacyPolicy.Default)) // Personal: cloud denied
+        assertEquals(listOf("local"), seen) // the privacy-denied cloud provider is not offered to the policy
+        c.assertInvocations(0)
+    }
+
+    @Test
     fun localProvider_isAllowed_underLocalOnly() = runTest {
         val l = local()
         val store = InferenceStore.single(l)

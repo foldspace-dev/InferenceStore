@@ -152,11 +152,17 @@ internal class RoutedInferenceStore(
                 }
             }
             val candidateIds = candidates.mapTo(mutableSetOf()) { it.provider.id }
-            val selected = (request.policy ?: policy).selectRoute(candidates)
+            // The policy may only choose among routable candidates: probed available +
+            // supported and privacy-allowed. Privacy-denied providers are already
+            // marked unavailable, but excluding them by id makes the intent explicit.
+            val routableCandidates = candidates.filter {
+                it.available && it.supported && it.provider.id !in privacyDenials
+            }
+            val selected = (request.policy ?: policy).selectRoute(routableCandidates)
             val policyId = selected.policyId
-            // The route is authoritative only over providers the engine probed AND
-            // that passed the privacy gate: neither a custom policy nor a probe gap
-            // can route to an unvetted or privacy-denied provider.
+            // Backstop: the route is authoritative only over providers the engine
+            // probed AND that passed the privacy gate, so neither a custom policy nor a
+            // probe gap can route to an unvetted or privacy-denied provider.
             val route = selected.orderedProviders.filter { it.id in candidateIds && it.id !in privacyDenials }
 
             val attempts = mutableListOf<ProviderAttemptTrace>()

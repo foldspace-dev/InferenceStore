@@ -129,33 +129,42 @@ public data class ProviderPrivacyBoundary(
         public fun localDevice(): ProviderPrivacyBoundary =
             ProviderPrivacyBoundary(ProviderPrivacyBoundaryId("local-process"), ProviderExecutionBoundary.LocalProcess)
 
-        public fun platform(vendor: String): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(
+        public fun platform(vendor: String): ProviderPrivacyBoundary {
+            require(vendor.isNotBlank()) { "vendor must not be blank" }
+            return ProviderPrivacyBoundary(
                 ProviderPrivacyBoundaryId("platform-on-device:$vendor"),
                 ProviderExecutionBoundary.PlatformOnDevice,
                 vendor = vendor,
             )
+        }
 
-        public fun platformHybrid(vendor: String): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(
+        public fun platformHybrid(vendor: String): ProviderPrivacyBoundary {
+            require(vendor.isNotBlank()) { "vendor must not be blank" }
+            return ProviderPrivacyBoundary(
                 ProviderPrivacyBoundaryId("platform-hybrid:$vendor"),
                 ProviderExecutionBoundary.PlatformHybrid,
                 vendor = vendor,
             )
+        }
 
-        public fun appBackend(vendor: String? = null): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(
-                ProviderPrivacyBoundaryId("app-backend${vendor?.let { ":$it" } ?: ""}"),
+        public fun appBackend(vendor: String? = null): ProviderPrivacyBoundary {
+            // Normalize blank to null so unspecified vendors share one stable id.
+            val normalized = vendor?.takeIf { it.isNotBlank() }
+            return ProviderPrivacyBoundary(
+                ProviderPrivacyBoundaryId("app-backend${normalized?.let { ":$it" } ?: ""}"),
                 ProviderExecutionBoundary.AppBackend,
-                vendor = vendor,
+                vendor = normalized,
             )
+        }
 
-        public fun thirdPartyCloud(vendor: String): ProviderPrivacyBoundary =
-            ProviderPrivacyBoundary(
+        public fun thirdPartyCloud(vendor: String): ProviderPrivacyBoundary {
+            require(vendor.isNotBlank()) { "vendor must not be blank" }
+            return ProviderPrivacyBoundary(
                 ProviderPrivacyBoundaryId("third-party-cloud:$vendor"),
                 ProviderExecutionBoundary.ThirdPartyCloud,
                 vendor = vendor,
             )
+        }
     }
 }
 
