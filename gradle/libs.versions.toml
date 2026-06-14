@@ -7,7 +7,7 @@ ktor = "3.5.0"
 sqldelight = "2.3.2"
 maven-publish = "0.30.0"
 opentelemetry = "1.45.0"
-dokka = "2.0.0"
+dokka = "2.2.0"
 android-compileSdk = "35"
 android-minSdk = "24"
 

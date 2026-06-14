@@ -38,5 +38,7 @@ dependencies {
 }
 
 dokka {
-    moduleName.set("InferenceStore")
+    dokkaPublications.html {
+        moduleName.set("InferenceStore")
+    }
 }
