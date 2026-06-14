@@ -224,9 +224,12 @@ internal class RoutedInferenceStore(
 
             // Artifact cache (storage-model.md): a read may short-circuit provider work.
             // The fingerprint is content-free and reused for the post-success write.
-            val fingerprint = cache?.let { fingerprinter.fingerprint(request) }
+            // All cache work is best-effort — a failing cache (or custom fingerprinter)
+            // must never fail an otherwise-successful request, so it is tolerated to a
+            // miss/skipped-write rather than propagated.
+            val fingerprint = if (cache != null) tolerateCacheFailure { fingerprinter.fingerprint(request) } else null
             if (cache != null && fingerprint != null && request.cache.read == CacheAccess.Allow) {
-                val cached = cache.read(fingerprint, request.output)
+                val cached = tolerateCacheFailure { cache.read(fingerprint, request.output) }
                 // A redacted artifact (output omitted by privacy) cannot serve a hit.
                 if (cached?.output != null) {
                     emit(
@@ -467,17 +470,19 @@ internal class RoutedInferenceStore(
                             request.cache.write == CacheAccess.Allow &&
                             request.privacy.persistence.persistOutput
                         ) {
-                            cache.write(
-                                InferenceArtifact(
-                                    fingerprint = fingerprint,
-                                    output = success.output,
-                                    rawText = success.rawText,
-                                    provider = attemptMetadata
-                                        ?: ProviderMetadata(provider.id, provider.kind, provider.boundary, modelId = modelId),
-                                    trace = if (request.privacy.persistence.persistTrace) successTrace else null,
-                                    validation = attemptValidation,
-                                ),
-                            )
+                            tolerateCacheFailure {
+                                cache.write(
+                                    InferenceArtifact(
+                                        fingerprint = fingerprint,
+                                        output = success.output,
+                                        rawText = success.rawText,
+                                        provider = attemptMetadata
+                                            ?: ProviderMetadata(provider.id, provider.kind, provider.boundary, modelId = modelId),
+                                        trace = if (request.privacy.persistence.persistTrace) successTrace else null,
+                                        validation = attemptValidation,
+                                    ),
+                                )
+                            }
                         }
                         emit(InferenceEvent.Done(requestId, InferenceResult(request.key, success.output, success.rawText, trace = successTrace)))
                         return@flow
@@ -670,6 +675,21 @@ internal class RoutedInferenceStore(
  * is treated as "no" (provider unavailable/incapable) rather than failing the
  * whole request, so routing can fall back. Cancellation still propagates.
  */
+/**
+ * Runs a best-effort cache operation. A failure (a misbehaving cache or custom
+ * fingerprinter) yields null — treated as a miss or a skipped write — and never
+ * fails the request; caller cancellation still propagates. `inline` so the block
+ * may suspend within the engine flow.
+ */
+private inline fun <T> tolerateCacheFailure(block: () -> T): T? =
+    try {
+        block()
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (throwable: Throwable) {
+        null
+    }
+
 private suspend fun probe(timeout: Duration?, block: suspend () -> Boolean): Boolean =
     try {
         if (timeout != null) withTimeoutOrNull(timeout) { block() } == true else block()

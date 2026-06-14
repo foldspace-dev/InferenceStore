@@ -53,6 +53,24 @@ class CacheTest {
         }
     }
 
+    /** A cache that throws on read and/or write — proves caching is best-effort. */
+    private class ThrowingCache(val onRead: Boolean, val onWrite: Boolean) : InferenceCache {
+        override suspend fun <Output : Any> read(
+            fingerprint: InferenceFingerprint,
+            output: OutputSpec<Output>,
+        ): InferenceArtifact<Output>? {
+            if (onRead) error("read boom")
+            return null
+        }
+
+        override suspend fun <Output : Any> write(artifact: InferenceArtifact<Output>) {
+            if (onWrite) error("write boom")
+        }
+
+        override suspend fun clear(key: InferenceKey) {}
+        override suspend fun clearAll() {}
+    }
+
     private val persistOutput = PrivacyPolicy(persistence = PersistencePermission(persistOutput = true))
 
     @Test
@@ -116,6 +134,25 @@ class CacheTest {
         }.generate(request)
         assertEquals("fresh", result.output)
         assertEquals(0, cache.reads)
+    }
+
+    @Test
+    fun throwingCacheRead_fallsThroughToProvider() = runTest {
+        val result = InferenceStore.build {
+            provider(fakeProvider("p", ProviderKind.Local) { complete("fresh") })
+            this.cache = ThrowingCache(onRead = true, onWrite = false)
+        }.generate(InferenceRequest.text(key, "hi").copy(cache = CachePolicy.readWrite()))
+        assertEquals("fresh", result.output)
+        assertFalse(result.trace?.servedFromCache == true)
+    }
+
+    @Test
+    fun throwingCacheWrite_doesNotFailSuccessfulRequest() = runTest {
+        val result = InferenceStore.build {
+            provider(fakeProvider("p", ProviderKind.Local) { complete("fresh") })
+            this.cache = ThrowingCache(onRead = false, onWrite = true)
+        }.generate(InferenceRequest.text(key, "hi", privacy = persistOutput).copy(cache = CachePolicy.readWrite()))
+        assertEquals("fresh", result.output)
     }
 
     @Test
