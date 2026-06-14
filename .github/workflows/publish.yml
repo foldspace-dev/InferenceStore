@@ -1,0 +1,40 @@
+name: Publish
+
+on:
+  # Releases: push a tag like v0.1.0 (with VERSION_NAME set to the release version).
+  push:
+    tags: [ 'v*' ]
+  # Snapshots / ad-hoc: run manually. Avoids failing on every main push before
+  # publishing secrets are configured.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # macOS runners ship Xcode + the Android SDK, so the full multiplatform matrix
+    # (common, JVM, Android, iOS) is published from one job.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+      - name: Publish to Maven Central
+        # Releases are signed; a -SNAPSHOT version is still published unsigned (the
+        # plugin skips signing for snapshots even with the flag on).
+        run: ./gradlew publishToMavenCentral -PRELEASE_SIGNING_ENABLED=true --no-configuration-cache --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
