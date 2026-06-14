@@ -9,6 +9,7 @@ import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
 import dev.mattramotar.inferencestore.core.provider.ProviderKind
 import dev.mattramotar.inferencestore.core.validation.OutputValidators
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -16,6 +17,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Monitor projection + redaction (OSS-19). */
+@OptIn(ExperimentalCoroutinesApi::class)
 class MonitorTest {
 
     private val key = InferenceKey("notes.summary", "n1")
@@ -89,6 +91,23 @@ class MonitorTest {
 
         assertTrue(events.any { it is MonitorEvent.FallbackStarted })
         assertTrue(events.any { it is MonitorEvent.ValidationCompleted })
+    }
+
+    @Test
+    fun monitorContext_isHonored() = runTest {
+        val events = mutableListOf<MonitorEvent>()
+        val local = fakeProvider("local", ProviderKind.Local) { complete("ok") }
+        val store = InferenceStore.build {
+            provider(local)
+            executionConfig = dev.mattramotar.inferencestore.core.InferenceExecutionConfig(
+                monitorContext = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler),
+            )
+            monitor { events += it }
+        }
+        store.generate(InferenceRequest.text(key, "hi"))
+        // Dispatch routed through monitorContext still delivers the full lifecycle.
+        assertTrue(events.first() is MonitorEvent.RequestStarted)
+        assertTrue(events.last() is MonitorEvent.RequestCompleted)
     }
 
     @Test

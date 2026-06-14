@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
@@ -553,8 +554,15 @@ internal class RoutedInferenceStore(
         }
     }
 
+    // Monitors run on config.monitorContext when configured (apps can move telemetry
+    // off the collector), inline for the default EmptyCoroutineContext (no switch).
+    private suspend fun dispatch(event: MonitorEvent) {
+        val context = config.monitorContext
+        if (context == EmptyCoroutineContext) dispatchInline(event) else withContext(context) { dispatchInline(event) }
+    }
+
     // A misbehaving monitor must never break inference; cancellation still propagates.
-    private fun dispatch(event: MonitorEvent) {
+    private fun dispatchInline(event: MonitorEvent) {
         for (monitor in monitors) {
             try {
                 monitor.onEvent(event)
