@@ -2,9 +2,11 @@ package dev.mattramotar.inferencestore.provider.litertlm
 
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
+import dev.mattramotar.inferencestore.core.model.OutputSpec
 import dev.mattramotar.inferencestore.core.provider.Capability
 import dev.mattramotar.inferencestore.core.provider.CapabilityReport
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
 import dev.mattramotar.inferencestore.core.provider.ProviderAvailability
@@ -80,11 +82,16 @@ public class LiteRtLmProvider(
             providerKind = kind,
             boundary = boundary,
             modelId = config.modelId,
-            runtimeVersion = "litert-lm",
             capabilities = capabilities,
-            extra = mapOf("backend" to config.backend.name),
+            extra = mapOf("backend" to config.backend.name, "runtime" to "litert-lm"),
         )
         emit(ProviderEvent.Started(metadata))
+
+        // This adapter only produces text; non-text outputs aren't supported here.
+        if (request.output !is OutputSpec.Text) {
+            emit(ProviderEvent.Failed(ProviderError(ErrorCategory.CapabilityUnsupported, message = "litert-lm produces text output only")))
+            return@flow
+        }
 
         val prompt = promptOf(request.input)
         val accumulated = StringBuilder()
@@ -94,12 +101,17 @@ public class LiteRtLmProvider(
                 emit(ProviderEvent.Token(token))
             }
             val text = accumulated.toString()
+            if (text.isEmpty()) {
+                // An empty local generation is a failure so routing can fall back.
+                emit(ProviderEvent.Failed(ProviderError(ErrorCategory.TransientProviderError, message = "empty response", source = ErrorSource.ProviderSpecific)))
+                return@flow
+            }
             @Suppress("UNCHECKED_CAST")
             emit(ProviderEvent.Completed(text as Output, rawText = text, metadata = metadata))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (error: LiteRtLmException) {
-            emit(ProviderEvent.Failed(ProviderError(error.category, message = error.message, cause = error.cause)))
+            emit(ProviderEvent.Failed(ProviderError(error.category, message = error.message, cause = error.cause, source = error.source)))
         } catch (throwable: Throwable) {
             // Unmapped native failures are terminal (Unknown) per "improve mapping
             // before enabling fallback" — adapters should map known errors explicitly.

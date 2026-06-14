@@ -1,6 +1,7 @@
 package dev.mattramotar.inferencestore.provider.litertlm
 
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.ProviderId
 import kotlinx.coroutines.flow.Flow
 import kotlin.time.Duration
@@ -40,19 +41,27 @@ public sealed interface LiteRtLmStatus {
     public data class Unavailable(public val failure: LiteRtLmFailure) : LiteRtLmStatus
 }
 
-/** A runtime error raised during generation, already mapped to a stable [category]. */
+/**
+ * A runtime error raised during generation, already mapped to a stable [category]
+ * and [source]. The default [source] is `ProviderSpecific` so a runtime-classified
+ * `PermanentProviderError` can fall back (per `error-fallback-mapping.md`).
+ */
 public class LiteRtLmException(
     public val category: ErrorCategory,
     message: String? = null,
     cause: Throwable? = null,
+    public val source: ErrorSource = ErrorSource.ProviderSpecific,
 ) : RuntimeException(message, cause)
 
 /**
  * The boundary between the adapter and the actual LiteRT-LM (Google AI Edge)
  * runtime. Integrators implement this with the native library; the adapter stays
- * runtime-agnostic and fully testable. Implementations MUST run engine init and
- * synchronous native calls off the caller's UI dispatcher (use the blocking
- * execution context) and release native resources on completion/cancellation.
+ * runtime-agnostic and fully testable.
+ *
+ * The implementation OWNS its threading: it MUST run engine initialization and
+ * synchronous native calls off the caller's dispatcher (e.g. on a dedicated
+ * thread or `Dispatchers.Default`) so collecting from a UI scope never blocks,
+ * and it MUST release native resources on completion, failure, and cancellation.
  */
 public interface LiteRtLmRuntime {
     /** Bounded readiness probe: validates model path/backend without full generation. */

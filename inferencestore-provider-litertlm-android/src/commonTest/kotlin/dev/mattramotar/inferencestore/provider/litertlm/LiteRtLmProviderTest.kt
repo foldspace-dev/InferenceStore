@@ -150,6 +150,48 @@ class LiteRtLmProviderTest {
     }
 
     @Test
+    fun emptyGeneration_failsTransient() = runTest {
+        val provider = LiteRtLmProvider(config, FakeRuntime(tokens = emptyList()))
+        val last = provider.stream(textRequest(), InferenceContext()).toList().last()
+        assertTrue(last is ProviderEvent.Failed)
+        assertEquals(ErrorCategory.TransientProviderError, last.error.category)
+    }
+
+    @Test
+    fun nonTextOutput_isCapabilityUnsupported() = runTest {
+        val provider = LiteRtLmProvider(config, FakeRuntime())
+        val customRequest = InferenceRequest(
+            key = key,
+            input = InferenceInput.Text("hi"),
+            output = OutputSpec.Custom { it },
+        ).toProviderRequest()
+        val last = provider.stream(customRequest, InferenceContext()).toList().last()
+        assertTrue(last is ProviderEvent.Failed)
+        assertEquals(ErrorCategory.CapabilityUnsupported, last.error.category)
+    }
+
+    @Test
+    fun providerSpecificPermanentError_fallsBack() = runTest {
+        val failing = LiteRtLmProvider(
+            config.copy(providerId = dev.mattramotar.inferencestore.core.provider.ProviderId("litertlm-a")),
+            FakeRuntime(error = LiteRtLmException(ErrorCategory.PermanentProviderError, "corrupt model")),
+        )
+        val healthy = LiteRtLmProvider(
+            config.copy(providerId = dev.mattramotar.inferencestore.core.provider.ProviderId("litertlm-b")),
+            FakeRuntime(tokens = listOf("ok")),
+        )
+        val store = InferenceStore.build {
+            provider(failing)
+            provider(healthy)
+            policy = dev.mattramotar.inferencestore.core.policy.Policies.preferLocalThenCloud()
+        }
+        // ProviderSpecific source lets the permanent error fall back to the healthy provider.
+        val result = store.generate(InferenceRequest.text(key, "hi"))
+        assertEquals("ok", result.output)
+        assertEquals("litertlm-b", result.trace?.finalProvider)
+    }
+
+    @Test
     fun probeTimeout_isUnavailable() = runTest {
         // Default availabilityTimeout is 500ms; the probe takes 2s -> times out.
         val runtime = FakeRuntime(status = LiteRtLmStatus.Ready, probeDelay = 2.seconds)
