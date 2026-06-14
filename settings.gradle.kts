@@ -23,6 +23,7 @@ include(
     ":inferencestore-provider-openai-compatible",
     ":inferencestore-provider-litertlm-android",
     ":inferencestore-provider-firebase-android",
+    ":inferencestore-provider-apple-foundation",
     ":inferencestore-store-sqldelight",
     ":inferencestore-monitor-opentelemetry",
     ":samples:notes-summary",
