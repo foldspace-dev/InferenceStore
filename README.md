@@ -151,11 +151,12 @@ val store = InferenceStore.build {
 }
 
 store.stream(
-    InferenceRequest.text(
+    InferenceRequest.json(
         key = InferenceKey("notes.summary", note.id),
         input = note.body,
-        output = Summary.serializer(),
-        privacy = PrivacyPolicy.personal(
+        serializer = Summary.serializer(),
+        privacy = PrivacyPolicy(
+            classification = PrivacyClass.Personal,
             cloud = CloudPermission.ApprovedProviders(setOf(ProviderId("openai-compatible")))
         )
     )

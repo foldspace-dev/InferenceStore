@@ -4,9 +4,9 @@ How to wrap an inference runtime or cloud endpoint as an InferenceStore
 `InferenceProvider`. The contract is defined in
 [`provider-adapters.md`](../technical/provider-adapters.md); this guide is the
 practical how-to. Two shipped adapters are worked references:
-[`inferencestore-provider-openai-compatible`](../../inferencestore-provider-openai-compatible)
+[`inferencestore-provider-openai-compatible`](https://github.com/foldspace-dev/InferenceStore/tree/main/inferencestore-provider-openai-compatible)
 (cloud, Ktor) and
-[`inferencestore-provider-litertlm-android`](../../inferencestore-provider-litertlm-android)
+[`inferencestore-provider-litertlm-android`](https://github.com/foldspace-dev/InferenceStore/tree/main/inferencestore-provider-litertlm-android)
 (on-device, runtime-injected).
 
 ## Responsibilities vs. non-responsibilities

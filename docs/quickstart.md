@@ -1,9 +1,16 @@
 # Quickstart
 
-From install to a first policy-routed inference request. Every snippet below is
-exercised by the runnable [`samples/notes-summary`](../samples/notes-summary) module
-(`NoteSummarizer`, `DemoProviders`, `Main`, and `NoteSummarizerTest`), so it compiles
-and runs today:
+From install to a first policy-routed, privacy-checked inference request. Every snippet
+below is exercised by the runnable
+[`samples/notes-summary`](https://github.com/foldspace-dev/InferenceStore/tree/main/samples/notes-summary)
+module (`NoteSummarizer`, `DemoProviders`, `Main`, and `NoteSummarizerTest`), so it
+compiles and runs today.
+
+!!! info "Prerequisites"
+    A Kotlin Multiplatform or JVM project (Kotlin 2.x, Gradle 8), JDK 17+. No model file or
+    API key is needed to follow along — the testkit's fake providers stand in for both.
+
+Want to see it run first? Clone the repo and:
 
 ```bash
 ./gradlew :samples:notes-summary:run
@@ -170,7 +177,41 @@ val provider = OpenAiCompatibleProvider(
 
 ## Next steps
 
-- Routing presets and fallback: `docs/technical/routing-policy.md`
-- Privacy model: `docs/technical/privacy-model.md`
-- Structured output (JSON/schema) and repair: `docs/rfcs/RFC-0006-structured-output.md`
-- Caching and dedupe: `docs/technical/storage-model.md`
+<div class="grid cards" markdown>
+
+- :material-routes:{ .lg .middle } __Routing &amp; fallback__
+
+    ---
+
+    The five presets, custom policies, and how fallback chains are ordered.
+
+    [:octicons-arrow-right-24: Policy](concepts/policy.md)
+
+- :material-shield-lock:{ .lg .middle } __Privacy__
+
+    ---
+
+    Privacy classes, cloud permission, and the gate that runs before any provider.
+
+    [:octicons-arrow-right-24: Privacy model](technical/privacy-model.md)
+
+- :material-check-decagram:{ .lg .middle } __Validate &amp; repair__
+
+    ---
+
+    Schema-validate structured output and repair invalid local results in the cloud.
+
+    [:octicons-arrow-right-24: Recipe](guides/recipes/validate-and-repair.md)
+
+- :material-database-arrow-down:{ .lg .middle } __Cache &amp; persist__
+
+    ---
+
+    Fingerprint-keyed caching, dedupe, and durable artifacts.
+
+    [:octicons-arrow-right-24: Recipe](guides/recipes/cache-results.md)
+
+</div>
+
+Browse all [recipes](guides/recipes/index.md), the [concepts](concepts/store.md), or the
+[API reference](reference/api.md).

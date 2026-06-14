@@ -1,36 +1,107 @@
 site_name: InferenceStore
-site_description: Store-like inference orchestration for Kotlin Multiplatform
+site_description: Store-like inference orchestration for Kotlin Multiplatform — policy-driven routing, privacy, fallback, validation, caching, and observability across local and cloud models.
+site_url: https://foldspace-dev.github.io/InferenceStore/
+docs_dir: docs
+copyright: Copyright &copy; 2026 Matt Ramotar · Apache-2.0
+
 repo_url: https://github.com/foldspace-dev/InferenceStore
 repo_name: foldspace-dev/InferenceStore
-docs_dir: docs
+edit_uri: edit/main/docs/
 
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+  font:
+    text: Inter
+    code: JetBrains Mono
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
+    - navigation.indexes
     - navigation.top
-    - content.code.copy
+    - navigation.footer
+    - navigation.tracking
     - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - announce.dismiss
   palette:
-    - scheme: default
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-    - scheme: slate
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
 
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/foldspace-dev/InferenceStore
+      name: InferenceStore on GitHub
+  generator: false
+
 markdown_extensions:
+  - abbr
   - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
   - toc:
       permalink: true
-  - pymdownx.highlight
-  - pymdownx.superfences
+      title: On this page
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.keys
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+plugins:
+  - search
 
 # Internal planning material is kept in the repo but out of the published site.
 exclude_docs: |
-  adr/
   prd/
   strategy/
   agents/
@@ -54,6 +125,14 @@ nav:
       - Model warmup: concepts/model-warmup.md
       - Telemetry upload: concepts/telemetry-upload.md
   - Guides:
+      - Recipes:
+          - guides/recipes/index.md
+          - Add cloud fallback: guides/recipes/cloud-fallback.md
+          - Enforce local-only privacy: guides/recipes/local-only-privacy.md
+          - Validate & repair output: guides/recipes/validate-and-repair.md
+          - Cache results: guides/recipes/cache-results.md
+          - Test routing deterministically: guides/recipes/test-routing.md
+          - Export traces to OpenTelemetry: guides/recipes/opentelemetry.md
       - Writing a provider adapter: guides/writing-a-provider-adapter.md
       - Security & privacy: guides/security-and-privacy.md
   - Reference:
@@ -68,6 +147,13 @@ nav:
       - Provider adapters: technical/provider-adapters.md
       - Observability & evals: technical/observability-evals.md
       - Testing: technical/testing.md
+      - Architecture decisions:
+          - ADR-0001 KMP-first: adr/0001-kmp-first.md
+          - ADR-0002 Adapters, not a runtime: adr/0002-provider-adapters-not-runtime.md
+          - ADR-0003 Streaming-first: adr/0003-streaming-first.md
+          - ADR-0004 Privacy policy as API: adr/0004-privacy-policy-as-api.md
+          - ADR-0005 First local adapter (LiteRT-LM): adr/0005-first-real-local-adapter-litertlm.md
+          - ADR-0006 First iOS adapter (Apple): adr/0006-first-ios-local-adapter.md
       - RFCs:
           - RFC-0001 Core abstractions: rfcs/RFC-0001-core-abstractions.md
           - RFC-0002 Provider adapter model: rfcs/RFC-0002-provider-adapter-model.md
@@ -75,3 +161,4 @@ nav:
           - RFC-0004 Cache and source of truth: rfcs/RFC-0004-cache-and-source-of-truth.md
           - RFC-0005 Meeseeks model lifecycle: rfcs/RFC-0005-meeseeks-model-lifecycle.md
           - RFC-0006 Structured output: rfcs/RFC-0006-structured-output.md
+  - API reference: reference/api.md
