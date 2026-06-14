@@ -51,6 +51,7 @@ nav:
       - Monitor: concepts/monitor.md
       - Route journal: concepts/route-journal.md
       - Provider inventory: concepts/provider-inventory.md
+      - Model warmup: concepts/model-warmup.md
   - Guides:
       - Writing a provider adapter: guides/writing-a-provider-adapter.md
       - Security & privacy: guides/security-and-privacy.md
