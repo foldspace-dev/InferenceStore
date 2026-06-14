@@ -15,6 +15,9 @@ import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
 import dev.mattramotar.inferencestore.core.model.OutputSpec
+import dev.mattramotar.inferencestore.core.monitor.InferenceMonitor
+import dev.mattramotar.inferencestore.core.monitor.MonitorEvent
+import dev.mattramotar.inferencestore.core.monitor.RequestSummary
 import dev.mattramotar.inferencestore.core.policy.FallbackMapping
 import dev.mattramotar.inferencestore.core.policy.delayFor
 import dev.mattramotar.inferencestore.core.policy.InferencePolicy
@@ -47,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.transform
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.CoroutineContext
@@ -92,6 +96,7 @@ public interface InferenceStore : AutoCloseable {
             providers = listOf(provider),
             policy = InferencePolicy { candidates -> InferenceRoute("single", candidates.map { it.provider }) },
             config = config,
+            monitors = emptyList(),
         )
     }
 }
@@ -99,6 +104,7 @@ public interface InferenceStore : AutoCloseable {
 /** DSL for [InferenceStore.build]. */
 public class InferenceStoreBuilder {
     private val providers: MutableList<InferenceProvider> = mutableListOf()
+    private val monitors: MutableList<InferenceMonitor> = mutableListOf()
 
     /** Default routing policy; a request may override it via `InferenceRequest.policy`. */
     public var policy: InferencePolicy = Policies.preferLocalThenCloud()
@@ -108,7 +114,13 @@ public class InferenceStoreBuilder {
         providers += provider
     }
 
-    internal fun build(): InferenceStore = RoutedInferenceStore(providers.toList(), policy, executionConfig)
+    /** Register a redacted-telemetry observer; called for each request's lifecycle. */
+    public fun monitor(monitor: InferenceMonitor) {
+        monitors += monitor
+    }
+
+    internal fun build(): InferenceStore =
+        RoutedInferenceStore(providers.toList(), policy, executionConfig, monitors.toList())
 }
 
 /**
@@ -152,6 +164,7 @@ internal class RoutedInferenceStore(
     private val providers: List<InferenceProvider>,
     private val policy: InferencePolicy,
     private val config: InferenceExecutionConfig,
+    private val monitors: List<InferenceMonitor> = emptyList(),
 ) : InferenceStore {
 
     init {
@@ -175,7 +188,7 @@ internal class RoutedInferenceStore(
     }
 
     override fun <Output : Any> stream(request: InferenceRequest<Output>): Flow<InferenceEvent<Output>> {
-        val route = routeStream(request)
+        val route = routeStream(request).withMonitors(request)
         return if (shouldDedupe(request)) dedupe.stream(dedupeKey(request), route) else route
     }
 
@@ -484,11 +497,12 @@ internal class RoutedInferenceStore(
     override suspend fun <Output : Any> generate(request: InferenceRequest<Output>): InferenceResult<Output> {
         // generate() may join an in-flight dedupe group until the terminal result
         // (it needs no token replay); otherwise it runs the route directly.
+        val route = routeStream(request).withMonitors(request)
         val terminal: InferenceEvent<Output> = if (shouldDedupe(request)) {
-            dedupe.generate(dedupeKey(request), routeStream(request))
+            dedupe.generate(dedupeKey(request), route)
         } else {
             @Suppress("UNCHECKED_CAST")
-            routeStream(request).first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
+            route.first { it is InferenceEvent.Done<*> || it is InferenceEvent.Failed }
                 as InferenceEvent<Output>
         }
         return when (terminal) {
@@ -498,6 +512,65 @@ internal class RoutedInferenceStore(
             }
             is InferenceEvent.Failed -> throw InferenceException(terminal.error)
             else -> error("unreachable terminal event: $terminal")
+        }
+    }
+
+    // Projects each stream event to a redacted MonitorEvent and dispatches it
+    // exactly once per execution (applied to routeStream, before dedupe sharing).
+    private fun <Output : Any> Flow<InferenceEvent<Output>>.withMonitors(
+        request: InferenceRequest<Output>,
+    ): Flow<InferenceEvent<Output>> {
+        if (monitors.isEmpty()) return this
+        val requestId = RequestId(request.key.asString())
+        return flow {
+            var tokens = 0
+            var routeSelected = false
+            collect { event ->
+                when (event) {
+                    is InferenceEvent.Started -> dispatch(MonitorEvent.RequestStarted(requestId, request.key))
+                    is InferenceEvent.ProviderAttemptStarted -> {
+                        if (!routeSelected) {
+                            routeSelected = true
+                            dispatch(MonitorEvent.RouteSelected(requestId, event.attempt.provider))
+                        }
+                        dispatch(MonitorEvent.ProviderAttemptStarted(requestId, event.attempt))
+                    }
+                    is InferenceEvent.Token -> dispatch(MonitorEvent.TokenEmitted(requestId, ++tokens))
+                    is InferenceEvent.Partial<*> -> Unit
+                    is InferenceEvent.ValidationCompleted -> dispatch(MonitorEvent.ValidationCompleted(requestId, event.result))
+                    is InferenceEvent.ProviderAttemptCompleted -> dispatch(MonitorEvent.ProviderAttemptCompleted(requestId, event.attempt))
+                    is InferenceEvent.FallbackStarted -> dispatch(MonitorEvent.FallbackStarted(requestId, event.reason))
+                    is InferenceEvent.RetryScheduled -> dispatch(MonitorEvent.RetryScheduled(requestId, event.provider, event.attemptNumber, event.delay))
+                    is InferenceEvent.Done<*> -> dispatch(
+                        MonitorEvent.RequestCompleted(
+                            requestId,
+                            RequestSummary(event.result.trace?.finalProvider, FinalStatus.Succeeded, tokens),
+                        ),
+                    )
+                    is InferenceEvent.Failed -> dispatch(MonitorEvent.RequestFailed(requestId, event.error.category))
+                }
+                emit(event)
+            }
+        }
+    }
+
+    // Monitors run on config.monitorContext when configured (apps can move telemetry
+    // off the collector), inline for the default EmptyCoroutineContext (no switch).
+    private suspend fun dispatch(event: MonitorEvent) {
+        val context = config.monitorContext
+        if (context == EmptyCoroutineContext) dispatchInline(event) else withContext(context) { dispatchInline(event) }
+    }
+
+    // A misbehaving monitor must never break inference; cancellation still propagates.
+    private fun dispatchInline(event: MonitorEvent) {
+        for (monitor in monitors) {
+            try {
+                monitor.onEvent(event)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Throwable) {
+                // best-effort observability
+            }
         }
     }
 
