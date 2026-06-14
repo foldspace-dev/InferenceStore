@@ -55,6 +55,23 @@ class RouteJournalTest {
     }
 
     @Test
+    fun cooldownOutlastsWindow_whenCooldownExceedsWindow() = runTest {
+        // window 30s, cooldown 2min: the failures age out of the window, but the cooldown
+        // deadline (stamped when the threshold tripped) is honored its full duration.
+        val journal = MemoryRouteJournal(
+            testTimeSource,
+            CooldownPolicy(failureThreshold = 3, window = 30.seconds, cooldown = 2.minutes),
+        )
+        repeat(3) { journal.record(a, AttemptOutcome.Failed) }
+        assertNotNull(journal.cooldown(a))
+        delay(40.seconds) // past the 30s window, within the 2min cooldown
+        assertTrue(journal.recentFailures(a).isEmpty()) // failures pruned by the window
+        val cooldown = journal.cooldown(a)
+        assertNotNull(cooldown, "cooldown must outlast the window")
+        assertTrue(cooldown.remaining > Duration.ZERO)
+    }
+
+    @Test
     fun failuresOutsideWindowDoNotCount() = runTest {
         val journal = MemoryRouteJournal(testTimeSource, policy)
         journal.record(a, AttemptOutcome.Failed)

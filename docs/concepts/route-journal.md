@@ -33,5 +33,9 @@ store.generate(
 Cooldowns expire on their own (driven by the journal's clock), so a recovered provider is
 automatically eligible again on the next snapshot.
 
+`excluding` keeps the delegate policy's identity, so a request that excludes a provider and
+one that doesn't share a cache fingerprint — which is intended: cached output is
+provider-agnostic, so a result produced by the fallback provider may serve either request.
+
 Learn more: [storage model](../technical/storage-model.md),
 [policy](policy.md).

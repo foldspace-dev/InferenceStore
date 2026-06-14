@@ -69,6 +69,10 @@ public interface RouteJournal {
 /**
  * In-memory [RouteJournal]. Tracks recent attempts against [timeSource] (inject a test
  * clock in tests) and derives cooldowns from [policy]. Coroutine-safe via a [Mutex].
+ *
+ * Crossing the failure threshold within [CooldownPolicy.window] stamps a `cooledUntil`
+ * deadline that is honored independently of window pruning, so a configured cooldown
+ * longer than the window still lasts its full duration.
  */
 public class MemoryRouteJournal(
     private val timeSource: TimeSource = TimeSource.Monotonic,
@@ -76,21 +80,30 @@ public class MemoryRouteJournal(
 ) : RouteJournal {
 
     private class Entry(val mark: TimeMark, val outcome: AttemptOutcome, val category: ErrorCategory?)
+    private class CooldownState(val until: TimeMark, val failures: Int)
 
     private val mutex = Mutex()
     private val attempts: MutableMap<ProviderId, MutableList<Entry>> = mutableMapOf()
+    private val cooled: MutableMap<ProviderId, CooldownState> = mutableMapOf()
 
     override suspend fun record(providerId: ProviderId, outcome: AttemptOutcome, category: ErrorCategory?) {
         mutex.withLock {
             val list = attempts.getOrPut(providerId) { mutableListOf() }
             list.add(Entry(timeSource.markNow(), outcome, category))
-            pruneExpired(list)
+            pruneExpired(providerId, list)
+            if (outcome == AttemptOutcome.Failed) {
+                val failures = list.count { it.outcome == AttemptOutcome.Failed }
+                if (failures >= policy.failureThreshold) {
+                    // Cooldown runs for `cooldown` from this (the most recent) failure.
+                    cooled[providerId] = CooldownState(timeSource.markNow() + policy.cooldown, failures)
+                }
+            }
         }
     }
 
     override suspend fun recentFailures(providerId: ProviderId): List<RouteFailure> = mutex.withLock {
         val list = attempts[providerId] ?: return@withLock emptyList()
-        pruneExpired(list)
+        pruneExpired(providerId, list)
         list.filter { it.outcome == AttemptOutcome.Failed }
             .map { RouteFailure(providerId, it.category ?: ErrorCategory.Unknown, it.mark.elapsedNow()) }
             .sortedBy { it.age } // most recent (smallest age) first
@@ -101,30 +114,38 @@ public class MemoryRouteJournal(
     }
 
     override suspend fun cooledDownProviders(): Set<ProviderId> = mutex.withLock {
-        attempts.keys.filterTo(mutableSetOf()) { cooldownLocked(it) != null }
+        // Snapshot the keys first: cooldownLocked removes expired entries as it goes.
+        cooled.keys.toList().filterTo(mutableSetOf()) { cooldownLocked(it) != null }
     }
 
     override suspend fun clear(providerId: ProviderId) {
-        mutex.withLock { attempts.remove(providerId) }
+        mutex.withLock {
+            attempts.remove(providerId)
+            cooled.remove(providerId)
+        }
     }
 
     override suspend fun clearAll() {
-        mutex.withLock { attempts.clear() }
+        mutex.withLock {
+            attempts.clear()
+            cooled.clear()
+        }
     }
 
-    // Caller holds the lock. Returns the active cooldown, pruning expired entries.
+    // Caller holds the lock. Returns the active cooldown, evicting it once expired.
     private fun cooldownLocked(providerId: ProviderId): Cooldown? {
-        val list = attempts[providerId] ?: return null
-        pruneExpired(list)
-        val failures = list.filter { it.outcome == AttemptOutcome.Failed }
-        if (failures.size < policy.failureThreshold) return null
-        // Cooldown runs from the most recent failure (smallest elapsed).
-        val sinceLast = failures.minOf { it.mark.elapsedNow() }
-        val remaining = policy.cooldown - sinceLast
-        return if (remaining > Duration.ZERO) Cooldown(remaining, failures.size) else null
+        val state = cooled[providerId] ?: return null
+        val remaining = -state.until.elapsedNow() // until is in the future while cooling down
+        if (remaining <= Duration.ZERO) {
+            cooled.remove(providerId)
+            return null
+        }
+        return Cooldown(remaining, state.failures)
     }
 
-    private fun pruneExpired(list: MutableList<Entry>) {
+    private fun pruneExpired(providerId: ProviderId, list: MutableList<Entry>) {
         list.removeAll { it.mark.elapsedNow() > policy.window }
+        // Don't retain an empty history for an idle provider (unless it's still cooling).
+        if (list.isEmpty() && providerId !in cooled) attempts.remove(providerId)
     }
 }
