@@ -53,6 +53,8 @@ public data class RouteTrace(
     public val finalProvider: String? = null,
     public val startedAtMillis: Long? = null,
     public val completedAtMillis: Long? = null,
+    /** True when the result was served from the cache without invoking a provider (OSS-25). */
+    public val servedFromCache: Boolean = false,
 )
 
 /** One invoked provider attempt within a [RouteTrace]. */

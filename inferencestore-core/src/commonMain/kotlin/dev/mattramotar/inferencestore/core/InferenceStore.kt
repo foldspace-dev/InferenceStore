@@ -11,6 +11,10 @@ import dev.mattramotar.inferencestore.core.event.ProviderAttemptTrace
 import dev.mattramotar.inferencestore.core.event.RejectedProviderTrace
 import dev.mattramotar.inferencestore.core.event.RequestId
 import dev.mattramotar.inferencestore.core.event.RouteTrace
+import dev.mattramotar.inferencestore.core.cache.DefaultFingerprinter
+import dev.mattramotar.inferencestore.core.cache.Fingerprinter
+import dev.mattramotar.inferencestore.core.cache.InferenceArtifact
+import dev.mattramotar.inferencestore.core.cache.InferenceCache
 import dev.mattramotar.inferencestore.core.dedupe.DedupeCoordinator
 import dev.mattramotar.inferencestore.core.model.InferenceInput
 import dev.mattramotar.inferencestore.core.model.InferenceRequest
@@ -26,8 +30,10 @@ import dev.mattramotar.inferencestore.core.policy.Policies
 import dev.mattramotar.inferencestore.core.policy.PolicyViolation
 import dev.mattramotar.inferencestore.core.policy.PrivacyDecision
 import dev.mattramotar.inferencestore.core.policy.ProviderCandidate
+import dev.mattramotar.inferencestore.core.policy.CacheAccess
 import dev.mattramotar.inferencestore.core.policy.allowsProvider
 import dev.mattramotar.inferencestore.core.provider.ErrorCategory
+import dev.mattramotar.inferencestore.core.provider.ProviderMetadata
 import dev.mattramotar.inferencestore.core.provider.ErrorSource
 import dev.mattramotar.inferencestore.core.provider.InferenceContext
 import dev.mattramotar.inferencestore.core.provider.InferenceProvider
@@ -110,6 +116,12 @@ public class InferenceStoreBuilder {
     public var policy: InferencePolicy = Policies.preferLocalThenCloud()
     public var executionConfig: InferenceExecutionConfig = InferenceExecutionConfig()
 
+    /** Optional artifact cache (`storage-model.md`); null disables read/write entirely. */
+    public var cache: InferenceCache? = null
+
+    /** Fingerprint strategy used to key the cache; defaults to [DefaultFingerprinter]. */
+    public var fingerprinter: Fingerprinter = DefaultFingerprinter
+
     public fun provider(provider: InferenceProvider) {
         providers += provider
     }
@@ -120,7 +132,7 @@ public class InferenceStoreBuilder {
     }
 
     internal fun build(): InferenceStore =
-        RoutedInferenceStore(providers.toList(), policy, executionConfig, monitors.toList())
+        RoutedInferenceStore(providers.toList(), policy, executionConfig, monitors.toList(), cache, fingerprinter)
 }
 
 /**
@@ -165,6 +177,8 @@ internal class RoutedInferenceStore(
     private val policy: InferencePolicy,
     private val config: InferenceExecutionConfig,
     private val monitors: List<InferenceMonitor> = emptyList(),
+    private val cache: InferenceCache? = null,
+    private val fingerprinter: Fingerprinter = DefaultFingerprinter,
 ) : InferenceStore {
 
     init {
@@ -207,6 +221,34 @@ internal class RoutedInferenceStore(
             val attemptTimeout = request.timeout.attemptTimeout
             fun remainingBudget(): Duration? = requestTimeout?.let { it - deadlineMark.elapsedNow() }
             fun deadlineExceeded(): Boolean = remainingBudget()?.let { it <= Duration.ZERO } == true
+
+            // Artifact cache (storage-model.md): a read may short-circuit provider work.
+            // The fingerprint is content-free and reused for the post-success write.
+            val fingerprint = cache?.let { fingerprinter.fingerprint(request) }
+            if (cache != null && fingerprint != null && request.cache.read == CacheAccess.Allow) {
+                val cached = cache.read(fingerprint, request.output)
+                // A redacted artifact (output omitted by privacy) cannot serve a hit.
+                if (cached?.output != null) {
+                    emit(
+                        InferenceEvent.Done(
+                            requestId,
+                            InferenceResult(
+                                request.key,
+                                cached.output,
+                                cached.rawText,
+                                trace = RouteTrace(
+                                    requestId = requestId.value,
+                                    key = key,
+                                    finalStatus = FinalStatus.Succeeded,
+                                    finalProvider = cached.provider.providerId.value,
+                                    servedFromCache = true,
+                                ),
+                            ),
+                        ),
+                    )
+                    return@flow
+                }
+            }
 
             // Privacy gate (privacy-model.md): evaluated BEFORE any provider work.
             // A denial is terminal for that provider and routing policy cannot
@@ -330,16 +372,21 @@ internal class RoutedInferenceStore(
                         (attemptTimeout == null || budgetRemaining <= attemptTimeout)
 
                     var modelId: String? = null
+                    var attemptMetadata: ProviderMetadata? = null
                     var result: AttemptResult<Output> = AttemptResult.NoTerminal()
                     emitAll(
                         provider.stream(providerRequest, context)
                             .let { if (attemptBudget != null) it.attemptTimeout(attemptBudget) else it }
                             .transform<ProviderEvent<Output>, InferenceEvent<Output>> { event ->
                                 when (event) {
-                                    is ProviderEvent.Started -> modelId = event.metadata.modelId
+                                    is ProviderEvent.Started -> {
+                                        attemptMetadata = event.metadata
+                                        modelId = event.metadata.modelId
+                                    }
                                     is ProviderEvent.Token -> emit(InferenceEvent.Token(requestId, event.text))
                                     is ProviderEvent.Partial -> emit(InferenceEvent.Partial(requestId, event.value))
                                     is ProviderEvent.Completed -> {
+                                        attemptMetadata = event.metadata
                                         modelId = event.metadata.modelId ?: modelId
                                         result = AttemptResult.Success(event.output, event.rawText)
                                     }
@@ -374,6 +421,7 @@ internal class RoutedInferenceStore(
                     // the canonical fallback path decides repair (FallbackPolicy.repairEnabled).
                     val produced = result
                     val validator = request.validator
+                    var attemptValidation: ValidationResult? = null
                     if (produced is AttemptResult.Success && validator != null) {
                         var validatorError: Throwable? = null
                         val verdict = try {
@@ -386,6 +434,7 @@ internal class RoutedInferenceStore(
                             validatorError = throwable
                             ValidationResult.Fail("validator threw an exception", ErrorCategory.Unknown)
                         }
+                        attemptValidation = verdict
                         emit(InferenceEvent.ValidationCompleted(requestId, verdict))
                         if (verdict is ValidationResult.Fail) {
                             result = AttemptResult.Failure(verdict.category, message = verdict.reason, cause = validatorError)
@@ -401,26 +450,36 @@ internal class RoutedInferenceStore(
                                 ProviderAttemptSummary(provider.id, attemptNumber, AttemptOutcome.Succeeded),
                             ),
                         )
-                        emit(
-                            InferenceEvent.Done(
-                                requestId,
-                                InferenceResult(
-                                    request.key,
-                                    success.output,
-                                    success.rawText,
-                                    trace = RouteTrace(
-                                        requestId = requestId.value,
-                                        key = key,
-                                        finalStatus = FinalStatus.Succeeded,
-                                        policyId = policyId,
-                                        attempts = attempts.toList(),
-                                        rejectedProviders = rejected,
-                                        fallbackReasons = fallbackReasons.toList(),
-                                        finalProvider = provider.id.value,
-                                    ),
-                                ),
-                            ),
+                        val successTrace = RouteTrace(
+                            requestId = requestId.value,
+                            key = key,
+                            finalStatus = FinalStatus.Succeeded,
+                            policyId = policyId,
+                            attempts = attempts.toList(),
+                            rejectedProviders = rejected,
+                            fallbackReasons = fallbackReasons.toList(),
+                            finalProvider = provider.id.value,
                         )
+                        // Cache write (storage-model.md): only when BOTH the cache policy
+                        // and the privacy policy allow persisting output. Runs before the
+                        // Done emission so generate()'s terminal short-circuit can't skip it.
+                        if (cache != null && fingerprint != null &&
+                            request.cache.write == CacheAccess.Allow &&
+                            request.privacy.persistence.persistOutput
+                        ) {
+                            cache.write(
+                                InferenceArtifact(
+                                    fingerprint = fingerprint,
+                                    output = success.output,
+                                    rawText = success.rawText,
+                                    provider = attemptMetadata
+                                        ?: ProviderMetadata(provider.id, provider.kind, provider.boundary, modelId = modelId),
+                                    trace = if (request.privacy.persistence.persistTrace) successTrace else null,
+                                    validation = attemptValidation,
+                                ),
+                            )
+                        }
+                        emit(InferenceEvent.Done(requestId, InferenceResult(request.key, success.output, success.rawText, trace = successTrace)))
                         return@flow
                     }
 

@@ -62,14 +62,34 @@ public data class RetryPolicy(
     }
 }
 
+/** Whether the engine may read from / write to the artifact cache for a request. */
+public enum class CacheAccess { Allow, Deny }
+
 /**
- * Cache policy placeholder. OSS-25 defines the artifact/cache interfaces and
- * OSS-11 wires dedupe; [allowDedupe] is opt-in per `threading-dispatchers.md`.
+ * Per-request cache and dedupe policy (`storage-model.md` / `caching-validation-dedupe.md`).
+ *
+ * Privacy-by-default: [read] is allowed (a cache miss is harmless) but [write] is
+ * denied — persisting a generated output is opt-in, and even when allowed the
+ * engine still requires `PrivacyPolicy.persistence.persistOutput`. [allowDedupe]
+ * is the in-flight request-coalescing knob (OSS-14). [ttl] /
+ * [allowStaleWhileRevalidate] are hints honored by the cache implementation.
  */
 public data class CachePolicy(
+    public val read: CacheAccess = CacheAccess.Allow,
+    public val write: CacheAccess = CacheAccess.Deny,
     public val allowDedupe: Boolean = false,
+    public val ttl: Duration? = null,
+    public val allowStaleWhileRevalidate: Boolean = false,
 ) {
+    init {
+        require(ttl == null || ttl > Duration.ZERO) { "ttl must be positive, was $ttl" }
+    }
+
     public companion object {
         public val Default: CachePolicy = CachePolicy()
+
+        /** Read and write the cache (still gated by `PrivacyPolicy.persistence.persistOutput`). */
+        public fun readWrite(ttl: Duration? = null): CachePolicy =
+            CachePolicy(read = CacheAccess.Allow, write = CacheAccess.Allow, ttl = ttl)
     }
 }
